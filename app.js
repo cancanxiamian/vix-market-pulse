@@ -464,36 +464,68 @@ function renderAnnotations(marketConfig) {
   `).join('');
 }
 
-// ── Chart.js Crosshair Plugin ────────────────────────────────
+// ── Chart.js Crosshair Plugin (Optimized O(1) Index Lookup) ─────────────
 const crosshairPlugin = {
   id: 'crosshairLine',
 
   afterEvent(chart, args) {
     const e = args.event;
     if (e.type === 'mousemove') {
-      const elems = chart.getElementsAtEventForMode(e, 'index', { intersect: false }, true);
-      if (elems.length > 0) {
-        const idx = elems[0].index;
-        crosshairState.active = true;
-        crosshairState.x     = elems[0].element.x;
-        crosshairState.idx   = idx;
-        args.changed = true;
-        if (chartInstance) updateTooltipContent(chartInstance, idx);
+      const { chartArea } = chart;
+      if (!chartArea) return;
+      const mouseX = e.x;
+      const mouseY = e.y;
+
+      if (mouseX >= chartArea.left && mouseX <= chartArea.right &&
+          mouseY >= chartArea.top  && mouseY <= chartArea.bottom) {
+        
+        const count = chart.data.labels.length;
+        if (count === 0) return;
+
+        // O(1) fast ratio index lookup instead of O(N*K) getElementsAtEventForMode
+        const ratio = (mouseX - chartArea.left) / (chartArea.right - chartArea.left);
+        let approxIdx = Math.round(ratio * (count - 1));
+        approxIdx = Math.max(0, Math.min(count - 1, approxIdx));
+
+        // Fine-tune around approxIdx
+        const meta = chart.getDatasetMeta(0);
+        let bestIdx = approxIdx;
+        if (meta?.data?.[approxIdx]) {
+          let minDiff = Math.abs(meta.data[approxIdx].x - mouseX);
+          for (let i = Math.max(0, approxIdx - 5); i <= Math.min(count - 1, approxIdx + 5); i++) {
+            const ptX = meta.data[i]?.x;
+            if (ptX != null) {
+              const diff = Math.abs(ptX - mouseX);
+              if (diff < minDiff) { minDiff = diff; bestIdx = i; }
+            }
+          }
+        }
+
+        const pointX = meta?.data?.[bestIdx]?.x ?? mouseX;
+
+        // Only request chart redraw if index or x position actually changed
+        if (crosshairState.idx !== bestIdx || crosshairState.x !== pointX) {
+          crosshairState.active = true;
+          crosshairState.x      = pointX;
+          crosshairState.idx    = bestIdx;
+          args.changed          = true;
+          if (chartInstance) updateTooltipContent(chartInstance, bestIdx);
+        }
       } else {
         if (crosshairState.active) {
           crosshairState.active = false;
-          crosshairState.x     = null;
-          crosshairState.idx   = null;
-          args.changed = true;
+          crosshairState.x      = null;
+          crosshairState.idx    = null;
+          args.changed          = true;
           tooltip.classList.add('hidden');
         }
       }
     } else if (e.type === 'mouseout') {
       if (crosshairState.active) {
         crosshairState.active = false;
-        crosshairState.x     = null;
-        crosshairState.idx   = null;
-        args.changed = true;
+        crosshairState.x      = null;
+        crosshairState.idx    = null;
+        args.changed          = true;
         tooltip.classList.add('hidden');
       }
     }
@@ -654,6 +686,7 @@ function buildChart(aligned) {
           fill: true,
           tension: 0.35,
           spanGaps: true,
+          normalized: true,
           segment: makeSegment(idx1Data),
           yAxisID: isPct ? 'yShared' : 'yIdx1',
           order: 2,
@@ -669,6 +702,7 @@ function buildChart(aligned) {
           fill: true,
           tension: 0.35,
           spanGaps: true,
+          normalized: true,
           segment: makeSegment(idx2Data),
           yAxisID: isPct ? 'yShared' : 'yIdx2',
           order: 3,
@@ -684,6 +718,7 @@ function buildChart(aligned) {
           fill: true,
           tension: 0.3,
           spanGaps: true,
+          normalized: true,
           segment: makeVixSegment(isPct ? aligned.vixPct : aligned.vixVals),
           yAxisID: isPct ? 'yShared' : 'yVix',
           order: 1,
@@ -693,7 +728,10 @@ function buildChart(aligned) {
     options: {
       responsive: true,
       maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
+      normalized: true,
+      animation: false,
+      hover: { mode: null },
+      interaction: { mode: undefined },
       plugins: {
         legend: {
           display: true, position: 'top', align: 'start',
