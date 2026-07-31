@@ -439,7 +439,8 @@ function renderKPIs(marketConfig, aligned, rawData) {
 
 
   kpiRow.innerHTML = `
-    <div class="kpi-card" id="card-idx1">
+    <!-- Desktop Layout (3 Cards) -->
+    <div class="kpi-card desktop-only" id="card-idx1">
       <div class="kpi-label">
         <span class="kpi-dot" style="background:${marketConfig.colors.idx1}"></span>${marketConfig.names.idx1}
       </div>
@@ -447,7 +448,7 @@ function renderKPIs(marketConfig, aligned, rawData) {
       <div class="kpi-change ${idx1Chg.cls}">${idx1Chg.text}</div>
       <div class="kpi-desc">${marketConfig.descs.idx1}</div>
     </div>
-    <div class="kpi-card" id="card-idx2">
+    <div class="kpi-card desktop-only" id="card-idx2">
       <div class="kpi-label">
         <span class="kpi-dot" style="background:${marketConfig.colors.idx2}"></span>${marketConfig.names.idx2}
       </div>
@@ -455,13 +456,35 @@ function renderKPIs(marketConfig, aligned, rawData) {
       <div class="kpi-change ${idx2Chg.cls}">${idx2Chg.text}</div>
       <div class="kpi-desc">${marketConfig.descs.idx2}</div>
     </div>
-    <div class="kpi-card" id="card-vix">
+    <div class="kpi-card desktop-only" id="card-vix">
       <div class="kpi-label">
         <span class="kpi-dot" style="background:${marketConfig.colors.vix}"></span>${marketConfig.names.vix}
       </div>
       <div class="kpi-value">${fmt(vixChg.lastVal)}</div>
       <div class="kpi-change ${vixChg.cls}">${vixChg.text}</div>
       <div class="kpi-desc">${marketConfig.descs.vix}</div>
+    </div>
+
+    <!-- Mobile Single-Line Layout -->
+    <div class="mobile-kpi-bar mobile-only">
+      <div class="mobile-kpi-item">
+        <span class="kpi-dot" style="background:${marketConfig.colors.idx1}"></span>
+        <span class="mobile-kpi-name">${marketConfig.names.idx1}:</span>
+        <span class="mobile-kpi-val">${fmt(idx1Chg.lastVal)}</span>
+        <span class="mobile-kpi-chg ${idx1Chg.cls}">(${idx1Chg.text})</span>
+      </div>
+      <div class="mobile-kpi-item">
+        <span class="kpi-dot" style="background:${marketConfig.colors.idx2}"></span>
+        <span class="mobile-kpi-name">${marketConfig.names.idx2}:</span>
+        <span class="mobile-kpi-val">${fmt(idx2Chg.lastVal)}</span>
+        <span class="mobile-kpi-chg ${idx2Chg.cls}">(${idx2Chg.text})</span>
+      </div>
+      <div class="mobile-kpi-item">
+        <span class="kpi-dot" style="background:${marketConfig.colors.vix}"></span>
+        <span class="mobile-kpi-name">${marketConfig.names.vix}:</span>
+        <span class="mobile-kpi-val">${fmt(vixChg.lastVal)}</span>
+        <span class="mobile-kpi-chg ${vixChg.cls}">(${vixChg.text})</span>
+      </div>
     </div>
   `;
 }
@@ -478,6 +501,40 @@ function renderAnnotations(marketConfig) {
     </div>
   `).join('');
 }
+
+// ── Auto-scale mobile KPI bar font to fit container width ─────────────
+function autoScaleMobileKpi() {
+  const bar = document.querySelector('.mobile-kpi-bar');
+  if (!bar || window.innerWidth > 768) return;
+  if (getComputedStyle(bar).display === 'none') return;
+
+  // Reset font size
+  bar.style.fontSize = '';
+  void bar.offsetWidth;
+
+  // Measure: sum up all children widths + gaps
+  const items = bar.querySelectorAll('.mobile-kpi-item');
+  if (!items.length) return;
+
+  const style    = getComputedStyle(bar);
+  const padL     = parseFloat(style.paddingLeft) || 0;
+  const padR     = parseFloat(style.paddingRight) || 0;
+  const gap      = parseFloat(style.gap) || 6;
+  const availW   = bar.offsetWidth - padL - padR;
+
+  let totalChildW = 0;
+  items.forEach(item => { totalChildW += item.offsetWidth; });
+  totalChildW += gap * (items.length - 1);
+
+  if (totalChildW > availW && availW > 0) {
+    const ratio  = availW / totalChildW;
+    const basePx = parseFloat(style.fontSize) || 13;
+    const newPx  = Math.max(7, Math.floor(basePx * ratio * 0.96 * 10) / 10);
+    bar.style.fontSize = newPx + 'px';
+  }
+}
+
+window.addEventListener('resize', autoScaleMobileKpi);
 
 // ── Overlay Crosshair Canvas Renderer (0ms Lag / 120FPS) ───────────────────
 function drawCrosshairOverlay(idx, mouseX) {
@@ -742,6 +799,7 @@ function buildChart(aligned) {
   currentAligned = aligned;
 
   function buildScales(pct, m) {
+    const isMobile = window.innerWidth <= 768;
     const xScale = {
       grid: { color: 'rgba(255,255,255,.04)', drawTicks: false },
       ticks: {
@@ -764,7 +822,7 @@ function buildChart(aligned) {
             callback: (v) => (v >= 0 ? '+' : '') + v.toFixed(1) + '%',
           },
           border: { display: false },
-          title: { display: true, text: '相对涨跌幅 (%)', color: '#64748b', font: { size: 10 } },
+          title: { display: !isMobile, text: '相对涨跌幅 (%)', color: '#64748b', font: { size: 10 } },
         },
       };
     } else {
@@ -779,7 +837,7 @@ function buildChart(aligned) {
             callback: (v) => v >= 1000 ? (v/1000).toFixed(1) + 'k' : v,
           },
           border: { display: false },
-          title: { display: true, text: m.names.idx1, color: hexToRgba(m.colors.idx1, .75), font: { size: 10 } },
+          title: { display: !isMobile, text: m.names.idx1, color: hexToRgba(m.colors.idx1, .75), font: { size: 10 } },
         },
         yIdx2: {
           type: 'linear', position: 'right',
@@ -790,7 +848,7 @@ function buildChart(aligned) {
             callback: (v) => v >= 1000 ? (v/1000).toFixed(1) + 'k' : v,
           },
           border: { display: false },
-          title: { display: true, text: m.names.idx2, color: hexToRgba(m.colors.idx2, .75), font: { size: 10 } },
+          title: { display: !isMobile, text: m.names.idx2, color: hexToRgba(m.colors.idx2, .75), font: { size: 10 } },
         },
         yVix: {
           type: 'linear', position: 'right',
@@ -801,7 +859,7 @@ function buildChart(aligned) {
             padding: 32,
           },
           border: { display: false },
-          title: { display: true, text: m.names.vix, color: hexToRgba(m.colors.vix, .85), font: { size: 10 } },
+          title: { display: !isMobile, text: m.names.vix, color: hexToRgba(m.colors.vix, .85), font: { size: 10 } },
         },
       };
     }
@@ -1034,6 +1092,7 @@ async function switchMarket(marketId) {
     const aligned  = alignData(filtered);
 
     renderKPIs(market, aligned, rawData);
+    autoScaleMobileKpi();
     renderAnnotations(market);
     buildChart(aligned);
   } catch (err) {
@@ -1055,6 +1114,7 @@ function activateRange(range) {
   const aligned  = alignData(filtered);
 
   renderKPIs(MARKETS[currentMarket], aligned, rawData);
+  autoScaleMobileKpi();
   buildChart(aligned);
 }
 
