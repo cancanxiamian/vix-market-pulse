@@ -349,6 +349,13 @@ body.theme-gold #tab-gold.active {
 }
 
 .chart-wrap canvas { width: 100% !important; height: 100% !important; }
+.crosshair-canvas {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100% !important; height: 100% !important;
+  pointer-events: none;
+  z-index: 15;
+}
 
 /* ===== Loading / Error overlays ===== */
 .loading-overlay, .error-overlay {
