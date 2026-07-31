@@ -22,9 +22,14 @@ const MIME = {
   '.png':  'image/png',
 };
 
-const DATA_DIR = path.join(__dirname, 'data');
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+const IS_VERCEL = !!process.env.VERCEL;
+const DATA_DIR  = IS_VERCEL ? path.join('/tmp', 'data') : path.join(__dirname, 'data');
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+} catch (e) {
+  console.warn('[cache] Directory creation warning:', e.message);
 }
 
 const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -514,21 +519,25 @@ const server = http.createServer((req, res) => {
   serveStatic(reqPath, res);
 });
 
-server.listen(PORT, () => {
-  console.log(`\n✅ Market Pulse 服务已启动`);
-  console.log(`   本地地址: http://localhost:${PORT}`);
-  console.log(`   数据代理: http://localhost:${PORT}/api/yahoo?symbol=^VIX`);
-  console.log(`   本地缓存: ${DATA_DIR}\n`);
-  startBackgroundCheck();
-});
+if (!IS_VERCEL) {
+  server.listen(PORT, () => {
+    console.log(`\n✅ Market Pulse 服务已启动`);
+    console.log(`   本地地址: http://localhost:${PORT}`);
+    console.log(`   数据代理: http://localhost:${PORT}/api/yahoo?symbol=^VIX`);
+    console.log(`   本地缓存: ${DATA_DIR}\n`);
+    startBackgroundCheck();
+  });
 
-server.on('error', (err) => {
-  if (err.code === 'EADDRINUSE') {
-    console.error(`[error] 端口 ${PORT} 已被占用，请关闭其他程序后重试`);
-  } else {
-    console.error('[error]', err.message);
-  }
-  process.exit(1);
-});
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`[error] 端口 ${PORT} 已被占用，请关闭其他程序后重试`);
+    } else {
+      console.error('[error]', err.message);
+    }
+    process.exit(1);
+  });
+}
 
-module.exports = server;
+module.exports = (req, res) => {
+  server.emit('request', req, res);
+};
