@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Market Pulse — A股 · 美股 · 黄金 走势与恐慌指数叠加图</title>
+  <meta name="description" content="过去5年 A股、美股、黄金走势与恐慌指数实时叠加对比图" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="theme-us">
+  <div class="bg-grid"></div>
+  <div class="noise-overlay"></div>
+  <div class="watermark-pattern"></div>
+
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo-group">
+        <div class="logo-icon" id="logoIcon">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+            <path d="M3 21 L8 13 L13 17 L18 8 L23 12 L25 7" stroke="url(#grad1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <defs>
+              <linearGradient id="grad1" x1="3" y1="21" x2="25" y2="7" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stop-color="#f97316"/>
+                <stop offset="100%" stop-color="#a855f7"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+        <div>
+          <h1 class="site-title" id="siteTitle">Market Pulse</h1>
+          <p class="site-sub" id="siteSub">实时市场情绪与指数对比</p>
+        </div>
+      </div>
+
+      <!-- Top Tab Switcher -->
+      <nav class="market-nav" aria-label="板块选择">
+        <button class="market-tab" data-market="cn" id="tab-cn">
+          <span class="tab-icon">🇨🇳</span>
+          <span class="tab-label">A股市场</span>
+        </button>
+        <button class="market-tab active" data-market="us" id="tab-us">
+          <span class="tab-icon">🇺🇸</span>
+          <span class="tab-label">美股市场</span>
+        </button>
+        <button class="market-tab" data-market="gold" id="tab-gold">
+          <span class="tab-icon">🪙</span>
+          <span class="tab-label">黄金避险</span>
+        </button>
+      </nav>
+
+      <div class="header-badges">
+        <span class="badge badge-live" id="statusBadge">
+          <span class="pulse-dot"></span>获取数据中…
+        </span>
+        <span class="badge badge-update" id="updateTime">-</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- Dynamic KPI Cards -->
+    <section class="kpi-row" id="kpiRow" aria-label="指数概览">
+      <!-- Generated dynamically by app.js -->
+    </section>
+
+    <!-- Chart Panel -->
+    <section class="chart-panel">
+      <div class="chart-toolbar">
+        <div class="toolbar-left">
+          <span class="chart-title" id="chartTitle">指数走势叠加图</span>
+          <span class="chart-hint" id="chartHint">左轴: 核心指数 · 右轴: 伴随指数 &amp; 恐慌指数（独立刻度）</span>
+        </div>
+        <div class="toolbar-right">
+          <button class="mode-btn" id="modeToggle" title="切换到涨跌幅百分比模式">涨跌幅 %</button>
+          <div class="range-btns" id="rangeGroup" role="group" aria-label="时间范围">
+            <button class="range-btn" data-range="1m" id="btn-1m">1个月</button>
+            <button class="range-btn" data-range="3m" id="btn-3m">3个月</button>
+            <button class="range-btn" data-range="6m" id="btn-6m">6个月</button>
+            <button class="range-btn active" data-range="1y" id="btn-1y">1年</button>
+            <button class="range-btn" data-range="2y" id="btn-2y">2年</button>
+            <button class="range-btn" data-range="5y" id="btn-5y">5年</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="chart-wrap">
+        <div class="loading-overlay" id="loadingOverlay">
+          <div class="spinner"></div>
+          <p class="loading-text" id="loadingText">正在获取真实数据…</p>
+        </div>
+        <div class="error-overlay hidden" id="errorOverlay">
+          <div class="error-icon">⚠</div>
+          <p class="error-text" id="errorText">数据加载失败，请重试</p>
+          <button class="retry-btn" id="retryBtn">重新加载</button>
+        </div>
+        <canvas id="mainChart" aria-label="指数与恐慌指数走势图"></canvas>
+      </div>
+
+      <!-- Crosshair tooltip (dynamic rows inserted by app.js) -->
+      <div class="crosshair-tooltip hidden" id="crosshairTooltip">
+        <div id="tooltipRows"></div>
+      </div>
+    </section>
+
+    <!-- Annotation Bar (dynamic tips inserted by app.js) -->
+    <section class="annotation-bar" id="annotationBar">
+      <!-- Generated dynamically by app.js -->
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>数据来源: Yahoo Finance · 仅供参考，不构成投资建议 · 延迟15–20分钟</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+
