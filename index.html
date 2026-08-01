@@ -3,8 +3,9 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Market Pulse — A股 · 美股 · 黄金 走势与恐慌指数叠加图</title>
+  <title>数值代替情绪 — A股 · 美股 · 黄金 走势与恐慌指数叠加图</title>
   <meta name="description" content="过去5年 A股、美股、黄金走势与恐慌指数实时叠加对比图" />
+  <link rel="icon" type="image/svg+xml" href="data/favicon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Noto+Serif+SC:wght@600;700&display=swap" rel="stylesheet" />
@@ -20,18 +21,10 @@
     <div class="header-inner">
       <div class="logo-group">
         <div class="logo-icon" id="logoIcon">
-          <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
-            <path d="M3 21 L8 13 L13 17 L18 8 L23 12 L25 7" stroke="url(#grad1)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
-            <defs>
-              <linearGradient id="grad1" x1="3" y1="21" x2="25" y2="7" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stop-color="#f97316"/>
-                <stop offset="100%" stop-color="#a855f7"/>
-              </linearGradient>
-            </defs>
-          </svg>
+          <img src="data/file.svg" alt="数值代替情绪 Logo" class="logo-svg-img" />
         </div>
         <div>
-          <h1 class="site-title" id="siteTitle">Market Pulse</h1>
+          <h1 class="site-title" id="siteTitle">数值代替情绪</h1>
           <p class="site-sub" id="siteSub">实时市场情绪与指数对比</p>
         </div>
       </div>
@@ -80,9 +73,11 @@
             <button class="range-btn" data-range="1m" id="btn-1m">1个月</button>
             <button class="range-btn" data-range="3m" id="btn-3m">3个月</button>
             <button class="range-btn" data-range="6m" id="btn-6m">6个月</button>
+            <button class="range-btn" data-range="ytd" id="btn-ytd">今年</button>
             <button class="range-btn active" data-range="1y" id="btn-1y">1年</button>
             <button class="range-btn" data-range="2y" id="btn-2y">2年</button>
             <button class="range-btn" data-range="5y" id="btn-5y">5年</button>
+            <button class="range-btn" data-range="10y" id="btn-10y">10年</button>
           </div>
         </div>
       </div>
