@@ -1007,9 +1007,9 @@ function drawCrosshairOverlay(idx, mouseX) {
   const offsetX = mainRect.left - overlayRect.left;
   const offsetY = mainRect.top - overlayRect.top;
 
-  const meta0 = chartInstance.getDatasetMeta(0);
+  // 竖线横坐标由 x 轴换算，不取 dataset 0 的元素位置——它可能已被用户隐藏
   // pt.x/pt.y 是 mainChart 坐标系，转换到 overlayCanvas 坐标系需加偏移
-  const rawPointX = meta0?.data?.[idx]?.x ?? mouseX;
+  const rawPointX = chartInstance.scales.x?.getPixelForValue(idx) ?? mouseX;
   const pointX = rawPointX + offsetX;
 
   // chartArea 边界同样需要偏移到 overlayCanvas 坐标系
@@ -1365,6 +1365,11 @@ function updateChartViewport() {
   const vix2Data = isPct ? sliced.vix2Pct : sliced.vix2Vals;
 
   chartInstance.data.labels = sliced.labels;
+  // 视口变化后标签数量随之改变，x 轴锁定的上界要同步（见 buildScales 中的说明）
+  if (chartInstance.options.scales.x) {
+    chartInstance.options.scales.x.min = 0;
+    chartInstance.options.scales.x.max = Math.max(0, sliced.labels.length - 1);
+  }
   chartInstance.data.datasets[0].data = idx1Data;
   chartInstance.data.datasets[0].segment = makeSegment(idx1Data);
   chartInstance.data.datasets[1].data = idx2Data;
@@ -1633,6 +1638,12 @@ function buildChart(aligned, resetViewport = false) {
     const xScale = {
       offset: false,
       bounds: 'data',
+      // 锁定为完整视口索引区间。不锁定时，类目轴会按「当前可见数据集」的
+      // 实际数据范围自动收缩——例如 10 年跨度下只留科创50（腾讯源仅 1200 天），
+      // 轴会缩到后 1200 个索引，而十字线与 afterBuildTicks 仍按 labels 全长
+      // 做比例换算，导致竖线位置和 x 轴日期全部错位。
+      min: 0,
+      max: Math.max(0, (slicedData?.labels?.length || 1) - 1),
       grid: { color: 'rgba(255,255,255,.04)', drawTicks: false },
       ticks: {
         color: '#475569',
@@ -1909,26 +1920,16 @@ function setupTabListeners() {
         mouseY >= chartArea.top && mouseY <= chartArea.bottom) {
 
         const count = activeData.labels.length;
-        const ratio = (mouseX - chartArea.left) / (chartArea.right - chartArea.left);
-        let approxIdx = Math.round(ratio * (count - 1));
-        approxIdx = Math.max(0, Math.min(count - 1, approxIdx));
-
-        const meta = chartInstance.getDatasetMeta(0);
-        let bestIdx = approxIdx;
-        if (meta?.data?.[approxIdx]) {
-          let minDiff = Math.abs(meta.data[approxIdx].x - mouseX);
-          for (let i = Math.max(0, approxIdx - 6); i <= Math.min(count - 1, approxIdx + 6); i++) {
-            const ptX = meta.data[i]?.x;
-            if (ptX != null) {
-              const diff = Math.abs(ptX - mouseX);
-              if (diff < minDiff) { minDiff = diff; bestIdx = i; }
-            }
-          }
-        }
+        // 由 x 轴自身做像素→索引换算，而不是按 labels 全长做比例换算：
+        // 后者一旦轴范围与 labels 长度不一致（如某些序列被隐藏）就会整体错位。
+        // 同理不能用 getDatasetMeta(0) 定位——dataset 0 可能正处于隐藏状态。
+        const xScale = chartInstance.scales.x;
+        let bestIdx = Math.round(xScale.getValueForPixel(mouseX));
+        bestIdx = Math.max(0, Math.min(count - 1, bestIdx));
 
         crosshairState.active = true;
         crosshairState.idx = bestIdx;
-        crosshairState.x = meta?.data?.[bestIdx]?.x ?? mouseX;
+        crosshairState.x = xScale.getPixelForValue(bestIdx) ?? mouseX;
 
         if (rAfId) cancelAnimationFrame(rAfId);
         rAfId = requestAnimationFrame(() => {
