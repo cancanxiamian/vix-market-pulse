@@ -2,3 +2,5 @@ node_modules/
 .ds_store
 data/
 *.log
+.workbuddy/
+*.bak_baseline_*

@@ -6,6 +6,22 @@
 'use strict';
 
 // ── Market Configurations ────────────────────────────────────
+//
+// 【新增板块或指数只需改这里，渲染代码无需改动】
+//
+// 每个板块的结构：
+//   indices[]  股指序列，条数任意（N 条）。字段：
+//                key        唯一标识，用作数据管线的键，不可重复
+//                volWeight  该品种的典型波动量级，**静态常量**，人工填写。
+//                           板块内按 volWeight 升序排出图上的垂直层级
+//                           （小的在下），不随行情或时间窗口变化——
+//                           若实时计算，切换时间范围时曲线会互相跳位置。
+//   fear       恐慌指数（唯一），isFearIndex 标记它不参与起始点标注、
+//              不参与最大回撤、单独挂第二根纵轴。
+//              low / high 是阈值，**只在此处定义一份**，
+//              纵轴范围与底部说明卡片文案都由它派生。
+//   cards[]    底部说明卡片。band 为 'high'/'low' 时标题由阈值自动生成，
+//              显式给 title 则用于非阈值类卡片。
 const MARKETS = {
   us: {
     id: 'us',
@@ -13,15 +29,21 @@ const MARKETS = {
     sub: '美股三大核心指数、标普500与 VIX 恐慌指数叠加对比',
     chartHint: '左轴: 纳斯达克100 & 标普500 · 右轴: 费城半导体 & VIX（独立刻度）',
     themeClass: 'theme-us',
-    symbols: { vix: '^VIX', idx1: '^NDX', idx2: '^SOX', idx3: '^GSPC' },
-    names: { vix: 'VIX 恐慌指数', idx1: '纳斯达克 100', idx2: '费城半导体', idx3: '标普 500' },
-    descs: { vix: 'CBOE 波动率 / 恐慌指标', idx1: '^NDX · 科技龙头指数', idx2: '^SOX · 芯片产业指数', idx3: '^GSPC · 标普500大盘' },
-    colors: { vix: '#22c55e', idx1: '#22d3ee', idx2: '#c084fc', idx3: '#F59E0B' },
-    annotations: [
-      { icon: '📌', title: 'VIX > 30', desc: '情绪高压 / 剧烈洗盘 — 市场波动率急剧飙升，多空剧烈分歧或大波幅震荡' },
-      { icon: '📊', title: 'VIX 18–30', desc: '温和波动 / 避险升温 — 市场不确定性上升，防守与加仓博弈并存' },
-      { icon: '✅', title: 'VIX < 18', desc: '低波平稳 / 偏好维持 — 情绪稳定乐观，多头趋势顺畅运行' }
-    ]
+    indices: [
+      { key: 'ndx',  name: '纳斯达克 100', symbol: '^NDX',  desc: '^NDX · 科技龙头指数',  color: '#22d3ee', volWeight: 1.5 },
+      { key: 'sox',  name: '费城半导体',   symbol: '^SOX',  desc: '^SOX · 芯片产业指数',  color: '#c084fc', volWeight: 2.5 },
+      { key: 'gspc', name: '标普 500',     symbol: '^GSPC', desc: '^GSPC · 标普500大盘',  color: '#F59E0B', volWeight: 1.0 },
+    ],
+    fear: {
+      key: 'vix', name: 'VIX 恐慌指数', short: 'VIX', symbol: '^VIX',
+      desc: 'CBOE 波动率 / 恐慌指标', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
+      isFearIndex: true, low: 18, high: 30,
+    },
+    cards: [
+      { icon: '📌', band: 'high', desc: '情绪高压 / 剧烈洗盘 — 市场波动率急剧飙升，多空剧烈分歧或大波幅震荡' },
+      { icon: '📊', band: 'mid',  desc: '温和波动 / 避险升温 — 市场不确定性上升，防守与加仓博弈并存' },
+      { icon: '✅', band: 'low',  desc: '低波平稳 / 偏好维持 — 情绪稳定乐观，多头趋势顺畅运行' },
+    ],
   },
   cn: {
     id: 'cn',
@@ -29,15 +51,21 @@ const MARKETS = {
     sub: 'A股核心大盘、上证综指、科创50与中国概念恐慌指数叠加对比',
     chartHint: '左轴: 沪深300 & 科创50 · 右轴: 上证指数 & 中国概念恐慌（独立刻度）',
     themeClass: 'theme-cn',
-    symbols: { vix: '^VXFXI', idx1: '000300.SS', idx2: '000001.SS', idx3: '000688.SS' },
-    names: { vix: '中国概念恐慌 (VXFXI)', idx1: '沪深 300 指数', idx2: '上证综合指数', idx3: '科创 50 指数' },
-    descs: { vix: '^VXFXI · CBOE 中国股票波动率', idx1: '000300.SS · A股核心大盘', idx2: '000001.SS · 上证综指', idx3: '000688.SS · 硬科技龙头' },
-    colors: { vix: '#22c55e', idx1: '#F59E0B', idx2: '#06B6D4', idx3: '#EC4899' },
-    annotations: [
-      { icon: '🇨🇳', title: 'VXFXI > 35', desc: '情绪极端剧烈 / 波动爆表 — 市场处于暴涨狂热或剧烈杀跌期，多空博弈白热化' },
+    indices: [
+      { key: 'hs300', name: '沪深 300 指数', symbol: '000300.SS', desc: '000300.SS · A股核心大盘', color: '#F59E0B', volWeight: 1.1 },
+      { key: 'sse',   name: '上证综合指数',  symbol: '000001.SS', desc: '000001.SS · 上证综指',   color: '#06B6D4', volWeight: 1.0 },
+      { key: 'kc50',  name: '科创 50 指数',  symbol: '000688.SS', desc: '000688.SS · 硬科技龙头', color: '#EC4899', volWeight: 1.8 },
+    ],
+    fear: {
+      key: 'vxfxi', name: '中国概念恐慌 (VXFXI)', short: 'VXFXI', symbol: '^VXFXI',
+      desc: '^VXFXI · CBOE 中国股票波动率', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
+      isFearIndex: true, low: 20, high: 35,
+    },
+    cards: [
+      { icon: '🇨🇳', band: 'high', desc: '情绪极端剧烈 / 波动爆表 — 市场处于暴涨狂热或剧烈杀跌期，多空博弈白热化' },
       { icon: '📈', title: '沪深300 / 上证 / 科创50', desc: '蓝筹核心、上证综指与硬科技对照，观察大盘风格切换与板块轮动' },
-      { icon: '🛡️', title: 'VXFXI < 20', desc: '波幅回落 / 低波动盘整 — 市场情绪平淡，大盘处于窄幅筑底或休养期' }
-    ]
+      { icon: '🛡️', band: 'low',  desc: '波幅回落 / 低波动盘整 — 市场情绪平淡，大盘处于窄幅筑底或休养期' },
+    ],
   },
   gold: {
     id: 'gold',
@@ -45,47 +73,131 @@ const MARKETS = {
     sub: 'COMEX 金银期货价格与黄金恐慌指数 (GVZ) 叠加对比',
     chartHint: '左轴: 黄金期货 · 右轴: 白银期货 & 黄金恐慌（独立刻度）',
     themeClass: 'theme-gold',
-    symbols: { vix: '^GVZ', idx1: 'GC=F', idx2: 'SI=F' },
-    names: { vix: '黄金恐慌指数 (GVZ)', idx1: 'COMEX 黄金期货', idx2: 'COMEX 白银期货' },
-    descs: { vix: '^GVZ · CBOE 黄金波动率', idx1: 'GC=F · 黄金期货 ($/盎司)', idx2: 'SI=F · 白银期货 ($/盎司)' },
-    colors: { vix: '#22c55e', idx1: '#FBBF24', idx2: '#94A3B8' },
-    annotations: [
-      { icon: '🪙', title: 'GVZ > 25', desc: '避险情绪爆发 / 波动剧烈 — 地缘政治或宏观事件触发金价大波幅博弈' },
+    indices: [
+      { key: 'gc', name: 'COMEX 黄金期货', symbol: 'GC=F', desc: 'GC=F · 黄金期货 ($/盎司)', color: '#FBBF24', volWeight: 1.0 },
+      { key: 'si', name: 'COMEX 白银期货', symbol: 'SI=F', desc: 'SI=F · 白银期货 ($/盎司)', color: '#94A3B8', volWeight: 1.6 },
+    ],
+    fear: {
+      key: 'gvz', name: '黄金恐慌指数 (GVZ)', short: 'GVZ', symbol: '^GVZ',
+      desc: '^GVZ · CBOE 黄金波动率', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
+      isFearIndex: true, low: 15, high: 25,
+    },
+    cards: [
+      { icon: '🪙', band: 'high', desc: '避险情绪爆发 / 波动剧烈 — 地缘政治或宏观事件触发金价大波幅博弈' },
       { icon: '⚡', title: '金银比率观照', desc: '黄金与白银走势对照，反映贵金属避险与工业属性异同' },
-      { icon: '✨', title: 'GVZ < 15', desc: '低波盘整 / 情绪平缓 — 避险需求平缓，金价处于平稳休养期' }
-    ]
+      { icon: '✨', band: 'low',  desc: '低波盘整 / 情绪平缓 — 避险需求平缓，金价处于平稳休养期' },
+    ],
   }
 };
+
+// ── 配置派生工具（全部按 N 计算，无任何板块名/指数名硬编码）──────────
+
+// 所有序列（股指 + 恐慌指数），顺序即数据集顺序
+const seriesOf = (m) => [...m.indices, m.fear];
+
+/**
+ * 垂直错位系数。
+ * SPREAD 是唯一旋钮：无论几条线，最下与最上的总错位跨度恒为 SPREAD。
+ * 线越多错位越密，留给曲线自身振幅的空间不变，各时间尺度下画面密度均衡。
+ *   step = SPREAD^(1/(N-1))，系数 = step^layer
+ * layer 由 volWeight 升序决定（波动小的在下），volWeight 是静态常量，
+ * 切换时间范围不会让曲线互相跳位置。
+ */
+const SPREAD = 1.8;
+function layerFactors(m) {
+  const n = m.indices.length;
+  const step = n > 1 ? Math.pow(SPREAD, 1 / (n - 1)) : 1;
+  const order = [...m.indices].sort((a, b) => a.volWeight - b.volWeight);
+  const out = {};
+  order.forEach((idx, layer) => { out[idx.key] = Math.pow(step, layer); });
+  return out;
+}
+
+/** 恐慌指数纵轴范围：由卡片阈值反推，不手工调数字 */
+const fearAxisRange = (m) => ({ min: m.fear.low / 1.5, max: m.fear.high * 4 });
+
+/** 批次C·需求7：副标题统一文案（替换各板块原有 chartHint） */
+const CHART_HINT = '统一基准 = 区间首日 · 对数刻度 · 多线垂直错开 · 恐慌指数为背景情绪层';
 
 const LOCAL_PROXY = '/api/merged?symbol=';
 
 // ── App State ───────────────────────────────────────────────
 let currentMarket = 'us';     // 'us' | 'cn' | 'gold'
 let currentRange = '1y';     // '1m' | '3m' | '6m' | '1y' | '2y' | '5y'
-let chartMode = 'absolute';// 'absolute' | 'pct'
+let chartMode = 'absolute';// 'absolute' | 'pct'（批次C 删除切换按钮后恒为 absolute，pct 分支保留但不可达）
 let chartInstance = null;
 let currentAligned = null;
 let currentSliced = null;
 let viewportState = { start: null, end: null };
 
+// 批次B：全量绘图数据（窗口首日归一化=100 × 错位系数）与各序列在基准日的原始值。
+// 基准锁定在时间范围按钮对应的起始日（getRangeIndices 的 start），拖拽平移不重算，
+// 只有点击时间范围按钮重建 Chart 时才更新（需求文档「冲突 1」推荐方案）。
+let currentPlotData = null;   // { [seriesKey]: [归一化×错位值, ...] }，与 aligned 同长
+let currentPlotBase = null;   // { [seriesKey]: 基准日原始值 }
+
+/**
+ * 批次B·需求1 绘图坐标变换：窗口首日归一化 = 100，再乘错位系数。
+ * 只作用于绘图坐标，显示给用户的数值一律回查 aligned.series 原始值（需求3）。
+ * 对数轴上整条序列乘常数 = 垂直平移固定像素，曲线形状与斜率完全不变，
+ * 因此错位不会破坏陡峭度可比性（需求文档「为什么必须是对数轴」）。
+ */
+function computePlotData(aligned, market, baseIdx) {
+  const factors = layerFactors(market);
+  const plot = {}, base = {};
+  for (const def of seriesOf(market)) {
+    const raw = aligned.series?.[def.key] || [];
+    // 基准：baseIdx 处该序列第一个非空值（基准日缺失则向后顺延）
+    let b = null;
+    for (let i = baseIdx; i < raw.length; i++) {
+      if (raw[i] != null && !isNaN(raw[i])) { b = raw[i]; break; }
+    }
+    base[def.key] = b;
+    if (def.isFearIndex === true) {
+      // 恐慌指数不归一化、不错位（需求2：用原始点位挂独立轴）
+      plot[def.key] = raw.slice();
+    } else {
+      const f = factors[def.key] || 1;
+      plot[def.key] = raw.map(v =>
+        (v == null || isNaN(v) || b == null || b === 0) ? null : v / b * 100 * f);
+    }
+  }
+  return { plot, base };
+}
+
+/**
+ * 批次B·需求1 股指对数轴范围（显式写死，不交给自动缩放）。
+ * 对数轴上用比例余量：上下各约 2% 视觉留白（min/max 恒 >0）。
+ */
+function computeLogRange(plotSeries, market) {
+  let min = Infinity, max = -Infinity;
+  for (const idx of market.indices) {
+    const vals = plotSeries?.[idx.key] || [];
+    for (const v of vals) {
+      if (v == null || isNaN(v)) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+  }
+  if (min === Infinity || max <= 0) return { min: 1, max: 100 };
+  const pad = Math.pow(max / min, 0.02);
+  return { min: min / pad, max: max * pad };
+}
+
+// 按 series 键遍历切片，与序列条数无关
 function getSlicedAligned(aligned, start, end) {
   if (!aligned || !aligned.labels || aligned.labels.length === 0) return aligned;
   const total = aligned.labels.length;
   const s = Math.max(0, Math.min(total - 1, start ?? 0));
   const e = Math.max(s, Math.min(total - 1, end ?? (total - 1)));
+  const series = {}, pct = {};
+  for (const k of Object.keys(aligned.series || {})) series[k] = aligned.series[k].slice(s, e + 1);
+  for (const k of Object.keys(aligned.pct || {}))    pct[k]    = aligned.pct[k].slice(s, e + 1);
   return {
     labels: aligned.labels.slice(s, e + 1),
     timestamps: aligned.timestamps.slice(s, e + 1),
-    vixVals: aligned.vixVals.slice(s, e + 1),
-    vix2Vals: (aligned.vix2Vals || []).slice(s, e + 1),
-    idx1Vals: aligned.idx1Vals.slice(s, e + 1),
-    idx2Vals: aligned.idx2Vals.slice(s, e + 1),
-    idx3Vals: (aligned.idx3Vals || []).slice(s, e + 1),
-    vixPct: aligned.vixPct.slice(s, e + 1),
-    vix2Pct: (aligned.vix2Pct || []).slice(s, e + 1),
-    idx1Pct: aligned.idx1Pct.slice(s, e + 1),
-    idx2Pct: aligned.idx2Pct.slice(s, e + 1),
-    idx3Pct: (aligned.idx3Pct || []).slice(s, e + 1),
+    series,
+    pct,
     missingFlags: aligned.missingFlags.slice(s, e + 1),
     startIndex: s,
     endIndex: e,
@@ -195,16 +307,31 @@ const UserSettings = {
   },
 };
 
-// 图例隐藏状态，按板块分别记忆：{ us: { vix: true }, ... }
+// 图例隐藏状态，按板块分别记忆：{ us: { sox: true }, ... }
+// 键与配置里的 series key（indices[].key / fear.key）一致，N 条序列天然适配。
 // 切换时间跨度 / 涨跌幅模式都会重建 Chart 实例，若不在此留档，
 // 用户手动隐藏的曲线会被数据集默认值重新点亮。
 const hiddenSeries = {
-  us:   { idx2: true, idx3: true }, // 默认隐藏：费城半导体 (idx2)、标普 500 (idx3)
-  cn:   { idx2: true, idx3: true }, // 默认隐藏：上证综合指数 (idx2)、科创 50 (idx3)
-  gold: { idx2: true },            // 默认隐藏：COMEX 白银期货 (idx2)
+  us:   { sox: true, gspc: true }, // 默认隐藏：费城半导体 (sox)、标普 500 (gspc)
+  cn:   { sse: true, kc50: true }, // 默认隐藏：上证综合指数 (sse)、科创 50 (kc50)
+  gold: { si: true },              // 默认隐藏：COMEX 白银期货 (si)
 };
 
-// 当前图表数据集下标 → 序列键（idx1/idx2/idx3/vix/vix2），供图例回写隐藏状态
+// 旧版（批次A 之前）的隐藏状态键是位置命名（idx1/idx2/idx3/vix/vix2），
+// 迁移到新配置 key：idx1→首个股指、idx2→次个、idx3→第三个、vix→fear。
+const LEGACY_HIDDEN_KEY_MAP = { idx1: 0, idx2: 1, idx3: 2, vix: 'fear' };
+function migrateLegacyHiddenKeys(mktId, legacyKeys, target) {
+  const m = MARKETS[mktId];
+  if (!m || !legacyKeys) return;
+  Object.entries(legacyKeys).forEach(([k, hidden]) => {
+    if (hidden !== true) return;
+    const pos = LEGACY_HIDDEN_KEY_MAP[k];
+    if (pos === 'fear') target[m.fear.key] = true;
+    else if (typeof pos === 'number' && m.indices[pos]) target[m.indices[pos].key] = true;
+  });
+}
+
+// 当前图表数据集下标 → 序列键（配置里的 key，如 ndx/sox/gspc/vix），供图例回写隐藏状态
 let currentSeriesKeys = [];
 
 // Crosshair state
@@ -485,40 +612,26 @@ async function loadMarketData(marketId) {
   const market = MARKETS[marketId];
   showLoading(`正在获取 ${market.title} 核心指数与恐慌指标…`);
 
-  const fetchPromises = [
-    fetchSymbol(market.symbols.vix),
-    fetchSymbol(market.symbols.idx1),
-    fetchSymbol(market.symbols.idx2),
-  ];
-  if (market.symbols.idx3) fetchPromises.push(fetchSymbol(market.symbols.idx3));
-  if (market.symbols.vix2) fetchPromises.push(fetchSymbol(market.symbols.vix2));
+  // 按配置里的序列顺序并发取数，条数由 indices.length 决定
+  const defs = seriesOf(market);
+  const results = await Promise.all(defs.map(d => fetchSymbol(d.symbol)));
 
-  const results = await Promise.all(fetchPromises);
-  let ri = 0;
-  const vixDataRaw = results[ri++];
-  const idx1Data = results[ri++];
-  const idx2Data = results[ri++];
-  const idx3Data = market.symbols.idx3 ? results[ri++] : null;
-  const vix2Data = market.symbols.vix2 ? results[ri++] : null;
+  const raw = {};
+  defs.forEach((d, i) => { raw[d.key] = results[i] || []; });
 
-  let vixData = vixDataRaw;
-  const realVixCount = vixDataRaw ? vixDataRaw.filter(d => d.v != null && !isNaN(d.v)).length : 0;
-  if (realVixCount < 10) {
-    const realIdx1 = idx1Data.filter(d => d.v != null).length;
-    const realIdx2 = idx2Data.filter(d => d.v != null).length;
-    const baseForHv = (realIdx2 > realIdx1) ? idx2Data : idx1Data;
-    vixData = calcRollingVolatility(baseForHv);
+  // 恐慌指数若无有效历史（如 ^VXFXI 只有实时快照），
+  // 用历史点数最多的那条股指算 20 日滚动波动率顶替
+  const fearKey = market.fear.key;
+  const rawFear = raw[fearKey];
+  const realFearCount = rawFear ? rawFear.filter(d => d.v != null && !isNaN(d.v)).length : 0;
+  if (realFearCount < 10 && market.indices.length) {
+    const baseForHv = market.indices
+      .map(idx => raw[idx.key] || [])
+      .reduce((best, cur) => (cur.filter(d => d.v != null).length > best.filter(d => d.v != null).length ? cur : best));
+    raw[fearKey] = calcRollingVolatility(baseForHv);
   }
 
-  const marketData = {
-    vix: vixData,
-    vix2: vix2Data || null,
-    idx1: idx1Data,
-    idx2: idx2Data,
-    idx3: idx3Data || null,
-    rawVix: vixDataRaw,
-  };
-
+  const marketData = { raw, rawFear };
   marketDataStore[marketId] = marketData;
   return marketData;
 }
@@ -545,13 +658,12 @@ function applyRange(data, range) {
     cutoff = nowTs - (cutoffs[range] || cutoffs['1y']);
   }
 
-  return {
-    vix: data.vix.filter(d => d.t >= cutoff),
-    vix2: data.vix2 ? data.vix2.filter(d => d.t >= cutoff) : null,
-    idx1: data.idx1.filter(d => d.t >= cutoff),
-    idx2: data.idx2.filter(d => d.t >= cutoff),
-    idx3: data.idx3 ? data.idx3.filter(d => d.t >= cutoff) : null,
-  };
+  // 逐键过滤，与序列条数无关
+  const out = {};
+  for (const k of Object.keys(data.raw || {})) {
+    out[k] = (data.raw[k] || []).filter(d => d.t >= cutoff);
+  }
+  return out;
 }
 
 // Helper: convert Unix timestamp to YYYY-MM-DD date string
@@ -564,68 +676,47 @@ function toDateStr(ts) {
 }
 
 // ── Align dates (Union of natural dates YYYY-MM-DD) ──────────────────────
+// filtered 是 { [key]: 序列 } 映射，键的数量即序列条数
 function alignData(filtered) {
-  const s1 = filtered.idx1 || [];
-  const s2 = filtered.idx2 || [];
-  const s3 = filtered.idx3 || [];
-  const sV = filtered.vix || [];
-  const sV2 = filtered.vix2 || [];
-
-  const map1 = new Map();
-  s1.forEach(d => { if (d.t) map1.set(toDateStr(d.t), d); });
-  const map2 = new Map();
-  s2.forEach(d => { if (d.t) map2.set(toDateStr(d.t), d); });
-  const map3 = new Map();
-  s3.forEach(d => { if (d.t) map3.set(toDateStr(d.t), d); });
-  const mapV = new Map();
-  sV.forEach(d => { if (d.t) mapV.set(toDateStr(d.t), d); });
-  const mapV2 = new Map();
-  sV2.forEach(d => { if (d.t) mapV2.set(toDateStr(d.t), d); });
-
-  const allDates = Array.from(new Set([
-    ...map1.keys(), ...map2.keys(), ...map3.keys(), ...mapV.keys(), ...mapV2.keys()
-  ])).sort();
-
-  if (allDates.length === 0) {
-    return { labels: [], vixVals: [], vix2Vals: [], idx1Vals: [], idx2Vals: [], idx3Vals: [], vixPct: [], vix2Pct: [], idx1Pct: [], idx2Pct: [], idx3Pct: [], timestamps: [], missingFlags: [] };
+  const keys = Object.keys(filtered || {});
+  const maps = {};
+  for (const k of keys) {
+    const m = new Map();
+    (filtered[k] || []).forEach(d => { if (d.t) m.set(toDateStr(d.t), d); });
+    maps[k] = m;
   }
 
-  const commonTimestamps = [];
-  const rawIdx1 = [], rawIdx2 = [], rawIdx3 = [], rawVix = [], rawVix2 = [];
-  const missingFlags = [];
-  const labels = [];
+  const dateSet = new Set();
+  for (const k of keys) for (const d of maps[k].keys()) dateSet.add(d);
+  const allDates = Array.from(dateSet).sort();
 
-  let last1 = null, last2 = null, last3 = null, lastV = null, lastV2 = null;
+  const empty = { labels: [], timestamps: [], series: {}, pct: {}, missingFlags: [] };
+  if (allDates.length === 0) {
+    keys.forEach(k => { empty.series[k] = []; empty.pct[k] = []; });
+    return empty;
+  }
+
+  const series = {};
+  keys.forEach(k => { series[k] = []; });
+  const last = {};
+  const commonTimestamps = [], labels = [], missingFlags = [];
 
   for (const dateStr of allDates) {
-    const e1 = map1.get(dateStr);
-    const e2 = map2.get(dateStr);
-    const e3 = map3.get(dateStr);
-    const eV = mapV.get(dateStr);
-    const eV2 = mapV2.get(dateStr);
+    let t = null;
+    for (const k of keys) { const e = maps[k].get(dateStr); if (e?.t) { t = e.t; break; } }
+    if (t == null) t = new Date(dateStr + 'T12:00:00Z').getTime() / 1000;
 
-    const t = e1?.t || e2?.t || e3?.t || eV?.t || eV2?.t || (new Date(dateStr + 'T12:00:00Z').getTime() / 1000);
-
-    const v1 = (e1?.v != null && !isNaN(e1.v)) ? e1.v : (last1 ?? null);
-    const v2 = (e2?.v != null && !isNaN(e2.v)) ? e2.v : (last2 ?? null);
-    const v3 = (e3?.v != null && !isNaN(e3.v)) ? e3.v : (last3 ?? null);
-    const vV = (eV?.v != null && !isNaN(eV.v)) ? eV.v : (lastV ?? null);
-    const vV2 = (eV2?.v != null && !isNaN(eV2.v)) ? eV2.v : (lastV2 ?? null);
-
-    if (v1 != null) last1 = v1;
-    if (v2 != null) last2 = v2;
-    if (v3 != null) last3 = v3;
-    if (vV != null) lastV = vV;
-    if (vV2 != null) lastV2 = vV2;
+    let anyMissing = false;
+    for (const k of keys) {
+      const e = maps[k].get(dateStr);
+      const v = (e?.v != null && !isNaN(e.v)) ? e.v : (last[k] ?? null);   // 前值填充
+      if (v != null) last[k] = v; else anyMissing = true;
+      series[k].push(v);
+    }
 
     commonTimestamps.push(t);
     labels.push(fmtDate(t));
-    rawIdx1.push(v1);
-    rawIdx2.push(v2);
-    rawIdx3.push(v3);
-    rawVix.push(vV);
-    rawVix2.push(vV2);
-    missingFlags.push(v1 == null || v2 == null);
+    missingFlags.push(anyMissing);
   }
 
   const calcPct = (arr) => {
@@ -634,22 +725,10 @@ function alignData(filtered) {
     if (baseItem == null) return arr.map(() => null);
     return arr.map(v => v == null ? null : parseFloat(((v - baseItem) / baseItem * 100).toFixed(2)));
   };
+  const pct = {};
+  keys.forEach(k => { pct[k] = calcPct(series[k]); });
 
-  return {
-    labels,
-    vixVals: rawVix,
-    vix2Vals: rawVix2,
-    idx1Vals: rawIdx1,
-    idx2Vals: rawIdx2,
-    idx3Vals: rawIdx3,
-    vixPct: calcPct(rawVix),
-    vix2Pct: calcPct(rawVix2),
-    idx1Pct: calcPct(rawIdx1),
-    idx2Pct: calcPct(rawIdx2),
-    idx3Pct: calcPct(rawIdx3),
-    timestamps: commonTimestamps,
-    missingFlags,
-  };
+  return { labels, timestamps: commonTimestamps, series, pct, missingFlags };
 }
 
 // ── Compute start/end indices for range selection on full 10-year aligned dataset ─────
@@ -734,59 +813,27 @@ function renderKPIs(marketConfig, aligned, rawData) {
     return `<span class="kpi-stale" title="数据源未提供 ${toDateStr(latestTs)} 的数据，此处为 ${toDateStr(chg.lastTs)} 收盘值">滞后</span>`;
   };
 
-  const idx1Chg = getSeriesChg(rawData?.idx1, aligned.idx1Vals);
-  const idx2Chg = getSeriesChg(rawData?.idx2, aligned.idx2Vals);
-  const idx3Chg = marketConfig.symbols.idx3 ? getSeriesChg(rawData?.idx3, aligned.idx3Vals) : null;
-  const vixSeriesToUse = (rawData?.rawVix && rawData.rawVix.length > 0) ? rawData.rawVix : rawData?.vix;
-  const vixChg = getSeriesChg(vixSeriesToUse, aligned.vixVals);
-  const vix2Chg = marketConfig.symbols.vix2 ? getSeriesChg(rawData?.vix2, aligned.vix2Vals) : null;
-
-  let html = `
-    <div class="kpi-item" id="card-idx1">
-      <span class="kpi-dot" style="background:${marketConfig.colors.idx1}"></span>
-      <span class="kpi-name">${marketConfig.names.idx1}</span>
-      <span class="kpi-val">${fmt(idx1Chg.lastVal)}</span>
-      <span class="kpi-chg ${idx1Chg.cls}">${idx1Chg.text}</span>${staleTag(idx1Chg)}
-    </div>
-    <div class="kpi-sep"></div>
-    <div class="kpi-item" id="card-idx2">
-      <span class="kpi-dot" style="background:${marketConfig.colors.idx2}"></span>
-      <span class="kpi-name">${marketConfig.names.idx2}</span>
-      <span class="kpi-val">${fmt(idx2Chg.lastVal)}</span>
-      <span class="kpi-chg ${idx2Chg.cls}">${idx2Chg.text}</span>${staleTag(idx2Chg)}
-    </div>
-  `;
-
-  if (marketConfig.symbols.idx3 && idx3Chg) {
+  // 按配置遍历所有序列（N 条股指 + 1 条恐慌指数），顺序 = indices[] + fear
+  const defs = seriesOf(marketConfig);
+  let html = '';
+  defs.forEach((def, i) => {
+    // 原始序列（含 .t/.v）优先，对齐数组兜底。
+    // 恐慌指数优先用替换前的原始序列（rawFear，对应基线 rawVix 语义），
+    // 原始数据不足时回退到 raw[key]（可能为滚动波动率补齐结果）。
+    const rawSeries = def.isFearIndex
+      ? ((rawData?.rawFear && rawData.rawFear.length > 0) ? rawData.rawFear : rawData?.raw?.[def.key])
+      : rawData?.raw?.[def.key];
+    const alignedArr = aligned.series?.[def.key] || [];
+    const chg = getSeriesChg(rawSeries, alignedArr);
+    const sep = i > 0 ? '<div class="kpi-sep"></div>' : '';
     html += `
-    <div class="kpi-sep"></div>
-    <div class="kpi-item" id="card-idx3">
-      <span class="kpi-dot" style="background:${marketConfig.colors.idx3}"></span>
-      <span class="kpi-name">${marketConfig.names.idx3}</span>
-      <span class="kpi-val">${fmt(idx3Chg.lastVal)}</span>
-      <span class="kpi-chg ${idx3Chg.cls}">${idx3Chg.text}</span>${staleTag(idx3Chg)}
+    ${sep}<div class="kpi-item" id="card-${def.key}">
+      <span class="kpi-dot" style="background:${def.color}"></span>
+      <span class="kpi-name">${def.name}</span>
+      <span class="kpi-val">${fmt(chg.lastVal)}</span>
+      <span class="kpi-chg ${chg.cls}">${chg.text}</span>${staleTag(chg)}
     </div>`;
-  }
-
-  html += `
-    <div class="kpi-sep"></div>
-    <div class="kpi-item" id="card-vix">
-      <span class="kpi-dot" style="background:${marketConfig.colors.vix}"></span>
-      <span class="kpi-name">${marketConfig.names.vix}</span>
-      <span class="kpi-val">${fmt(vixChg.lastVal)}</span>
-      <span class="kpi-chg ${vixChg.cls}">${vixChg.text}</span>${staleTag(vixChg)}
-    </div>`;
-
-  if (marketConfig.symbols.vix2 && vix2Chg) {
-    html += `
-    <div class="kpi-sep"></div>
-    <div class="kpi-item" id="card-vix2">
-      <span class="kpi-dot" style="background:${marketConfig.colors.vix2}"></span>
-      <span class="kpi-name">${marketConfig.names.vix2}</span>
-      <span class="kpi-val">${fmt(vix2Chg.lastVal)}</span>
-      <span class="kpi-chg ${vix2Chg.cls}">${vix2Chg.text}</span>${staleTag(vix2Chg)}
-    </div>`;
-  }
+  });
 
   kpiRow.innerHTML = html;
   // After DOM settles, auto-scale font to fit all items
@@ -796,11 +843,19 @@ function renderKPIs(marketConfig, aligned, rawData) {
 
 function renderAnnotations(marketConfig) {
   const annoBar = $('annotationBar');
-  annoBar.innerHTML = marketConfig.annotations.map(item => `
+  const fear = marketConfig.fear;
+  // band 卡片的标题由 fear 阈值派生（low/high 只在配置里定义一份）：
+  //   high → "VIX > 30"   mid → "VIX 18–30"   low → "VIX < 18"
+  const bandTitle = (band) => {
+    if (band === 'high') return `${fear.short} > ${fear.high}`;
+    if (band === 'low')  return `${fear.short} < ${fear.low}`;
+    return `${fear.short} ${fear.low}–${fear.high}`; // mid
+  };
+  annoBar.innerHTML = marketConfig.cards.map(item => `
     <div class="anno-item">
       <span class="anno-icon">${item.icon}</span>
       <div>
-        <b>${item.title}</b> ${item.desc}
+        <b>${item.title || bandTitle(item.band)}</b> ${item.desc}
       </div>
     </div>
   `).join('');
@@ -906,13 +961,10 @@ function startRainbowAnimationLoop() {
 function calcMaxDrawdown(sliced, market) {
   if (!sliced || !sliced.labels || sliced.labels.length < 2) return null;
 
-  const seriesDefs = [
-    { key: 'idx1', name: market.names.idx1, color: market.colors.idx1, vals: sliced.idx1Vals, dsIdx: 0 },
-    { key: 'idx2', name: market.names.idx2, color: market.colors.idx2, vals: sliced.idx2Vals, dsIdx: 1 },
-  ];
-  if (market.symbols.idx3) {
-    seriesDefs.push({ key: 'idx3', name: market.names.idx3, color: market.colors.idx3, vals: sliced.idx3Vals || [], dsIdx: 2 });
-  }
+  // 只遍历股指（indices[]），恐慌指数（isFearIndex）不参与最大回撤
+  const seriesDefs = market.indices
+    .map((idx, i) => ({ key: idx.key, name: idx.name, color: idx.color, vals: sliced.series?.[idx.key], dsIdx: i }))
+    .filter(s => s.vals && s.vals.length);
 
   let worstMDD = null;
 
@@ -996,11 +1048,39 @@ function drawRainbowOverlayOnly() {
     const mainRect = mainChartCanvas.getBoundingClientRect();
     const offsetX = mainRect.left - overlayRect.left;
     const offsetY = mainRect.top - overlayRect.top;
+    // 批次C·需求2：恐慌指数阈值参考线（18 / 30，与底部说明卡片阈值一致）
+    drawFearThresholdLines(ctx, chartArea, offsetX, offsetY);
     const sliced = currentSliced || currentAligned;
     const mdd = mddEnabled ? calcMaxDrawdown(sliced, MARKETS[currentMarket]) : null;
     if (mdd) {
       drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY);
     }
+  }
+  ctx.restore();
+}
+
+/**
+ * 批次C·需求2：在恐慌指数轴（yFear，对数）的 low / high 阈值位置画两条水平虚线
+ * （0.5px，透明度 0.4），与底部三张说明卡片的阈值一致。overlay 自绘，不引入插件。
+ */
+function drawFearThresholdLines(ctx, chartArea, offsetX, offsetY) {
+  if (!chartInstance || !chartInstance.scales || !chartInstance.scales.yFear) return;
+  const market = MARKETS[currentMarket];
+  const scale = chartInstance.scales.yFear;
+  const caTop = chartArea.top + offsetY;
+  const caBottom = chartArea.bottom + offsetY;
+
+  ctx.save();
+  ctx.setLineDash([4, 4]);
+  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)'; // 0.5px 虚线 + 0.4 透明度
+  for (const v of [market.fear.low, market.fear.high]) {
+    const y = scale.getPixelForValue(v) + offsetY;
+    if (y == null || isNaN(y) || y < caTop - 2 || y > caBottom + 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(chartArea.left + offsetX, y);
+    ctx.lineTo(chartArea.right + offsetX, y);
+    ctx.stroke();
   }
   ctx.restore();
 }
@@ -1223,6 +1303,9 @@ function drawCrosshairOverlay(idx, mouseX) {
     drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY);
   }
 
+  // 批次C·需求2：恐慌指数阈值参考线（18 / 30）
+  drawFearThresholdLines(ctx, chartArea, offsetX, offsetY);
+
   if (rawPointX == null || rawPointX < chartArea.left || rawPointX > chartArea.right) {
     ctx.restore();
     return;
@@ -1241,15 +1324,9 @@ function drawCrosshairOverlay(idx, mouseX) {
 
   // 2️⃣ One crisp dot per dataset at the intersection point (skip missing or hidden datasets)
   const market = MARKETS[currentMarket];
-  const dsColors = [market.colors.idx1, market.colors.idx2];
-  const dsVals = [activeData.idx1Vals, activeData.idx2Vals];
-  if (market.symbols.idx3) {
-    dsColors.push(market.colors.idx3);
-    dsVals.push(activeData.idx3Vals);
-  }
-  const vixIdx = dsColors.length;
-  dsColors.push(market.colors.vix);
-  dsVals.push(activeData.vixVals);
+  const seriesDefs = seriesOf(market);
+  const dsColors = seriesDefs.map(d => d.color);
+  const dsVals = seriesDefs.map(d => activeData.series?.[d.key]);
 
   // 每条曲线记录一个纵轴标签：{ y, color, 值, 相对视口起始日的涨跌幅 }
   const axisLabels = [];
@@ -1268,7 +1345,8 @@ function drawCrosshairOverlay(idx, mouseX) {
     const dotX = pt.x + offsetX;
     const dotY = pt.y + offsetY;
 
-    const isFearIdx = dsIdx >= vixIdx;   // 恐慌指数（vix / vix2）位于指数序列之后
+    // 恐慌指数（isFearIndex）用情绪色阶着色、且不画横向引导线
+    const isFearIdx = seriesDefs[dsIdx]?.isFearIndex === true;
     const dotColor = (isFearIdx && val != null) ? getVixColor(val, currentMarket) : color;
 
     // 横向引导线：从纵轴延伸到该曲线的交点。
@@ -1345,8 +1423,8 @@ function computeAxisGutter(sliced, market, isPct) {
     || (computeAxisGutter._ctx = document.createElement('canvas').getContext('2d'));
   c.font = '600 11px "JetBrains Mono", monospace';
 
-  const seriesArr = [sliced.idx1Vals, sliced.idx2Vals];
-  if (market.symbols.idx3) seriesArr.push(sliced.idx3Vals || []);
+  // 只测股指（恐慌指数数值量级不同且独占右轴，不占左轴留白）
+  const seriesArr = market.indices.map(idx => sliced.series?.[idx.key]);
 
   let maxW = 0;
   for (const arr of seriesArr) {
@@ -1486,68 +1564,6 @@ const makeSegment = (datasetData) => ({
   },
 });
 
-const makeVixSegment = (vixDataArr, marketId) => ({
-  borderColor: (ctx) => {
-    const v0 = vixDataArr[ctx.p0DataIndex];
-    const v1 = vixDataArr[ctx.p1DataIndex];
-    if (v0 == null || v1 == null) return 'rgba(148,163,184,0.45)';
-    return getVixColor((v0 + v1) / 2, marketId);
-  },
-  borderDash: (ctx) => {
-    const v0 = vixDataArr[ctx.p0DataIndex];
-    const v1 = vixDataArr[ctx.p1DataIndex];
-    if (v0 == null || v1 == null) return [4, 4];
-    return undefined;
-  },
-});
-
-// ── Compute globally-normalized Y axis ranges so equal visual height = equal % change ──
-function computeNormalizedRanges(sliced, market) {
-  // Build list of index series that have data
-  const seriesDefs = [
-    { key: 'idx1', yId: 'yIdx1', data: sliced.idx1Vals },
-    { key: 'idx2', yId: 'yIdx2', data: sliced.idx2Vals },
-  ];
-  if (market.symbols.idx3) {
-    seriesDefs.push({ key: 'idx3', yId: 'yIdx3', data: sliced.idx3Vals || [] });
-  }
-
-  let globalMinPct = 0, globalMaxPct = 0;
-  const result = {};
-
-  for (const s of seriesDefs) {
-    const nonNull = (s.data || []).filter(v => v != null && !isNaN(v));
-    if (nonNull.length < 2) continue;
-    const base = nonNull[0];
-    if (base === 0) continue;
-    const pcts = nonNull.map(v => (v - base) / base);
-    const minP = Math.min(...pcts);
-    const maxP = Math.max(...pcts);
-    globalMinPct = Math.min(globalMinPct, minP);
-    globalMaxPct = Math.max(globalMaxPct, maxP);
-    result[s.key] = { yId: s.yId, base };
-  }
-
-  // 上下各留 8% 视觉余量。
-  // 注意必须按「区间跨度」而非「最大绝对幅度」计算：
-  // 涨跌幅高度不对称时（如白银 10 年 -43% ~ +463%），按最大绝对幅度会算出
-  // 55 个百分点的留白，把轴底部从 -43% 一路压到 -98%，纵轴刻度贴到 0 附近。
-  const range = Math.max(globalMaxPct - globalMinPct, 0.02);
-  const pad = range * 0.08;
-  // 跨度极大时（如 10 年期）留白本身可能超过「到零的距离」，把轴底压成负数。
-  // 指数不存在负值，故对下界做钳制；lo/hi 对所有序列共用，钳制不破坏跨序列对齐。
-  const lo = Math.max(globalMinPct - pad, -0.98);
-  const hi = globalMaxPct + pad;
-
-  // Compute absolute min/max for each series based on global pct range
-  for (const entry of Object.values(result)) {
-    entry.min = entry.base * (1 + lo);
-    entry.max = entry.base * (1 + hi);
-  }
-
-  return result; // { idx1: { yId, base, min, max }, ... }
-}
-
 // 🚀 Lightweight incremental viewport update (60FPS+ Smooth Zoom & Pan, No Re-instantiation)
 function updateChartViewport() {
   if (!chartInstance || !currentAligned) return;
@@ -1556,17 +1572,12 @@ function updateChartViewport() {
 
   const isPct = chartMode === 'pct';
   const market = MARKETS[currentMarket];
+  const defs = seriesOf(market);
 
   // 拖拽平移时同步更新 KPI 显示
   if (marketDataStore[currentMarket]) {
     renderKPIs(market, sliced, marketDataStore[currentMarket]);
   }
-
-  const idx1Data = isPct ? sliced.idx1Pct : sliced.idx1Vals;
-  const idx2Data = isPct ? sliced.idx2Pct : sliced.idx2Vals;
-  const idx3Data = isPct ? sliced.idx3Pct : sliced.idx3Vals;
-  const vixData = isPct ? sliced.vixPct : sliced.vixVals;
-  const vix2Data = isPct ? sliced.vix2Pct : sliced.vix2Vals;
 
   chartInstance.data.labels = sliced.labels;
   // 视口变化后标签数量随之改变，x 轴锁定的上界要同步（见 buildScales 中的说明）
@@ -1574,43 +1585,29 @@ function updateChartViewport() {
     chartInstance.options.scales.x.min = 0;
     chartInstance.options.scales.x.max = Math.max(0, sliced.labels.length - 1);
   }
-  chartInstance.data.datasets[0].data = idx1Data;
-  chartInstance.data.datasets[0].segment = makeSegment(idx1Data);
-  chartInstance.data.datasets[1].data = idx2Data;
-  chartInstance.data.datasets[1].segment = makeSegment(idx2Data);
 
-  let currentDsIdx = 2;
-  if (market.symbols.idx3) {
-    chartInstance.data.datasets[currentDsIdx].data = idx3Data;
-    chartInstance.data.datasets[currentDsIdx].segment = makeSegment(idx3Data);
-    currentDsIdx++;
-  }
+  // 逐数据集更新（顺序 = 配置里的 indices[] + fear）。
+  // 批次B·需求1：绘图数据始终取全量归一化×错位序列的视口切片——
+  // 归一化基准锁定在时间范围起始日，拖拽平移不重算（冲突1 推荐方案）。
+  const viewStart = viewportState.start ?? 0;
+  const viewEnd = viewportState.end ?? (currentAligned.labels.length - 1);
+  const sliceRange = (arr) => arr ? arr.slice(viewStart, viewEnd + 1) : [];
+  const slicedPlot = {};
+  for (const k of Object.keys(currentPlotData || {})) slicedPlot[k] = sliceRange(currentPlotData[k]);
 
-  chartInstance.data.datasets[currentDsIdx].data = vixData;
-  chartInstance.data.datasets[currentDsIdx].segment = makeVixSegment(isPct ? sliced.vixPct : sliced.vixVals, currentMarket);
-  currentDsIdx++;
+  defs.forEach((def, dsIdx) => {
+    const values = isPct ? (sliced.pct?.[def.key] || []) : (slicedPlot[def.key] || []);
+    const ds = chartInstance.data.datasets[dsIdx];
+    if (!ds) return;
+    ds.data = values;
+    ds.segment = makeSegment(values);
+  });
 
-  if (market.symbols.vix2) {
-    chartInstance.data.datasets[currentDsIdx].data = vix2Data;
-    chartInstance.data.datasets[currentDsIdx].segment = makeVixSegment(isPct ? sliced.vix2Pct : sliced.vix2Vals, currentMarket);
-  }
-
-  // ── Re-normalize Y axes on every viewport change (absolute mode only) ──
+  // ── 批次B·需求1：股指对数轴范围随视口显式重算（min/max 写死，不交给自动缩放）──
   if (!isPct) {
-    const normRanges = computeNormalizedRanges(sliced, market);
-    for (const entry of Object.values(normRanges)) {
-      const scale = chartInstance.options.scales[entry.yId];
-      if (scale) {
-        scale.min = entry.min;
-        scale.max = entry.max;
-      }
-    }
-  } else {
-    // In pct mode: clear any manual min/max so Chart.js auto-scales
-    for (const yId of ['yIdx1', 'yIdx2', 'yIdx3']) {
-      const scale = chartInstance.options.scales[yId];
-      if (scale) { delete scale.min; delete scale.max; }
-    }
+    const logRange = computeLogRange(slicedPlot, market);
+    const yp = chartInstance.options.scales.yPrice;
+    if (yp) { yp.min = logRange.min; yp.max = logRange.max; }
   }
 
   // 缩放平移会改变涨跌幅基准（视口首值），标签宽度随之变化，留白必须跟着重算
@@ -1647,44 +1644,54 @@ function renderEndpointDOMTags(chart) {
   const canvasTop = chart.canvas ? (chart.canvas.offsetTop || 0) : 0;
   const canvasLeft = chart.canvas ? (chart.canvas.offsetLeft || 0) : 0;
 
-  chart.data.datasets.forEach((ds, dsIdx) => {
-    if (!chart.isDatasetVisible(dsIdx)) return;
+  // 批次B·需求3：起点/终点标注读原始数据（aligned.series），并锁在
+  // 时间范围按钮对应的起始日（基准日）与全量末日上；拖拽平移时标注
+  // 跟随数据移动，基准日被拖出视口则标注随之消失（需求文档「冲突2」推荐）。
+  // 恐慌指数（isFearIndex）起点终点均不标注（Q3）。
+  const market = MARKETS[currentMarket];
+  const aligned = currentAligned;
+  const rangeIdx = aligned ? getRangeIndices(aligned, currentRange) : null;
+  const viewStart = viewportState.start ?? 0;
+  if (!rangeIdx) { container.innerHTML = ''; return; }
+
+  seriesOf(market).forEach((def, dsIdx) => {
+    if (def.isFearIndex === true) return;              // 恐慌指数不标
+    if (!chart.isDatasetVisible(dsIdx)) return;        // 隐藏序列不标
     const meta = chart.getDatasetMeta(dsIdx);
     if (!meta || !meta.data || meta.data.length === 0) return;
+    const color = def.color;
+    const seriesVals = aligned.series?.[def.key] || [];
 
-    const color = ds.borderColor || '#3b82f6';
-
-    // 1. 起点 (左侧边缘)
-    const pt0 = meta.data[0];
-    const val0 = ds.data[0];
-    if (pt0 && val0 != null && !isNaN(val0)) {
-      const text = isPct ? '0.00%' : fmt(val0);
-      leftItems.push({
-        yRaw: canvasTop + pt0.y,
-        y: canvasTop + pt0.y,
-        x: canvasLeft + chartArea.left,
-        text,
-        color
-      });
+    // 1. 起点 = 基准日（range 起始日）。localIdx 为视口内相对下标，越界说明不在视口内
+    const sLocal = rangeIdx.start - viewStart;
+    if (sLocal >= 0 && sLocal < meta.data.length) {
+      const pt = meta.data[sLocal];
+      const val = seriesVals[rangeIdx.start];
+      if (pt && pt.y != null && !isNaN(pt.y) && val != null && !isNaN(val)) {
+        leftItems.push({
+          yRaw: canvasTop + pt.y,
+          y: canvasTop + pt.y,
+          x: canvasLeft + chartArea.left,
+          text: fmt(val),
+          color
+        });
+      }
     }
 
-    // 2. 终点 (右侧边缘)
-    const lastIdx = meta.data.length - 1;
-    const ptLast = meta.data[lastIdx];
-    const valLast = ds.data[lastIdx];
-    if (ptLast && valLast != null && !isNaN(valLast)) {
-      let text = fmt(valLast);
-      if (isPct) {
-        const sign = valLast >= 0 ? '+' : '';
-        text = `${sign}${valLast.toFixed(2)}%`;
+    // 2. 终点 = 全量末日
+    const eLocal = rangeIdx.end - viewStart;
+    if (eLocal >= 0 && eLocal < meta.data.length) {
+      const pt = meta.data[eLocal];
+      const val = seriesVals[rangeIdx.end];
+      if (pt && pt.y != null && !isNaN(pt.y) && val != null && !isNaN(val)) {
+        rightItems.push({
+          yRaw: canvasTop + pt.y,
+          y: canvasTop + pt.y,
+          x: canvasLeft + chartArea.right,
+          text: fmt(val),
+          color
+        });
       }
-      rightItems.push({
-        yRaw: canvasTop + ptLast.y,
-        y: canvasTop + ptLast.y,
-        x: canvasLeft + chartArea.right,
-        text,
-        color
-      });
     }
   });
 
@@ -1809,17 +1816,30 @@ function buildChart(aligned, resetViewport = false) {
     return `rgba(${r},${g},${b},${a})`;
   }
 
-  const gradIdx1 = ctx.createLinearGradient(0, 0, 0, 460);
-  gradIdx1.addColorStop(0, hexToRgba(market.colors.idx1, .18));
-  gradIdx1.addColorStop(1, hexToRgba(market.colors.idx1, 0));
+  const defs = seriesOf(market);
 
-  const gradIdx2 = ctx.createLinearGradient(0, 0, 0, 460);
-  gradIdx2.addColorStop(0, hexToRgba(market.colors.idx2, .14));
-  gradIdx2.addColorStop(1, hexToRgba(market.colors.idx2, 0));
+  // 批次B·需求1：计算全量绘图数据（归一化×错位），基准 = 时间范围按钮对应起始日。
+  // 只有重建 Chart（切板块/切范围）才重算基准；拖拽平移只切视口，基准不重算。
+  const rangeIdx = getRangeIndices(aligned, currentRange);
+  const { plot: fullPlot, base: plotBase } = computePlotData(aligned, market, rangeIdx.start);
+  currentPlotData = fullPlot;
+  currentPlotBase = plotBase;
 
+  // 当前视口切片（相对全量的偏移索引）
+  const viewStart = viewportState.start ?? rangeIdx.start;
+  const viewEnd = viewportState.end ?? rangeIdx.end;
+  const sliceRange = (arr) => arr ? arr.slice(viewStart, viewEnd + 1) : [];
+  const slicedPlot = {};
+  for (const k of Object.keys(fullPlot)) slicedPlot[k] = sliceRange(fullPlot[k]);
+
+  // 股指对数轴范围（视口内显式写死，批次B·需求1）
+  const logRange = computeLogRange(slicedPlot, market);
+
+  // 恐慌指数渐变背景（fill: true 时生效；股指 fill: false 无需背景）
+  // 批次C·需求2：面积填充透明度 0.12
   const gradVix = ctx.createLinearGradient(0, 0, 0, 460);
-  gradVix.addColorStop(0, hexToRgba(market.colors.vix, .22));
-  gradVix.addColorStop(1, hexToRgba(market.colors.vix, 0));
+  gradVix.addColorStop(0, hexToRgba(market.fear.color, .12));
+  gradVix.addColorStop(1, hexToRgba(market.fear.color, 0));
 
   if (chartInstance) {
     chartInstance.destroy();
@@ -1827,122 +1847,39 @@ function buildChart(aligned, resetViewport = false) {
   }
 
   const isPct = chartMode === 'pct';
-  const idx1Data = isPct ? sliced.idx1Pct : sliced.idx1Vals;
-  const idx2Data = isPct ? sliced.idx2Pct : sliced.idx2Vals;
-  const vixData = isPct ? sliced.vixPct : sliced.vixVals;
 
   const axisGutter = resolveAxisGutter(sliced, market, isPct);
 
-  // 恢复该板块此前手动隐藏的曲线；无记录则用各自默认值
+  // 恢复该板块此前手动隐藏的曲线；无记录则用各自默认值（hiddenSeries 初始化即含默认隐藏）
   const stored = hiddenSeries[market.id] || (hiddenSeries[market.id] = {});
-  const wasHidden = (key, fallback = false) => stored[key] ?? fallback;
-  const seriesKeys = ['idx1', 'idx2'];
+  const wasHidden = (key) => stored[key] ?? false;
 
-  const datasets = [
-    {
-      label: `${market.names.idx1} (${market.symbols.idx1})`,
-      data: idx1Data,
-      borderColor: market.colors.idx1,
-      borderWidth: 2.2,
+  // 数据集顺序 = 配置里的 indices[] + fear，条数任意（N 泛化）
+  const seriesKeys = defs.map(d => d.key);
+  const datasets = defs.map((def, i) => {
+    const isFear = def.isFearIndex === true;
+    const values = isPct ? (sliced.pct?.[def.key] || []) : (slicedPlot[def.key] || []);
+    return {
+      label: isFear ? `${def.name}` : `${def.name} (${def.symbol})`,
+      data: values,
+      // 批次C·需求2：恐慌指数用低饱和中性色 + 线宽 1.2 + 透明度 0.65（背景层，不抢戏）
+      borderColor: isFear ? withAlpha(def.color, .65) : def.color,
+      backgroundColor: isFear ? gradVix : undefined,
+      borderWidth: isFear ? 1.2 : 2.2,
       pointRadius: 0,
       pointHoverRadius: 0,
-      fill: false,
-      tension: 0.35,
+      fill: isFear,
+      tension: isFear ? 0.3 : 0.35,
       spanGaps: true,
       normalized: true,
-      segment: makeSegment(idx1Data),
-      yAxisID: isPct ? 'yShared' : 'yIdx1',
-      order: 1,
-      hidden: wasHidden('idx1'),
-    },
-    {
-      label: `${market.names.idx2} (${market.symbols.idx2})`,
-      data: idx2Data,
-      borderColor: market.colors.idx2,
-      borderWidth: 2.2,
-      pointRadius: 0,
-      pointHoverRadius: 0,
-      fill: false,
-      tension: 0.35,
-      spanGaps: true,
-      normalized: true,
-      segment: makeSegment(idx2Data),
-      yAxisID: isPct ? 'yShared' : 'yIdx2',
-      order: 2,
-      hidden: wasHidden('idx2', true),
-    },
-  ];
-
-  if (market.symbols.idx3) {
-    const idx3Data = isPct ? sliced.idx3Pct : sliced.idx3Vals;
-    seriesKeys.push('idx3');
-
-    datasets.push({
-      label: `${market.names.idx3} (${market.symbols.idx3})`,
-      data: idx3Data,
-      borderColor: market.colors.idx3,
-      borderWidth: 2.2,
-      pointRadius: 0,
-      pointHoverRadius: 0,
-      fill: false,
-      tension: 0.35,
-      spanGaps: true,
-      normalized: true,
-      segment: makeSegment(idx3Data),
-      yAxisID: isPct ? 'yShared' : 'yIdx3',
-      order: 3,
-      hidden: wasHidden('idx3', true),
-    });
-  }
-
-  // vix dataset: hidden by default only if market has vix2 (CN market)
-  const vixHiddenDefault = !!market.symbols.vix2;
-  seriesKeys.push('vix');
-  datasets.push({
-    label: `${market.names.vix}`,
-    data: vixData,
-    borderColor: market.colors.vix,
-    backgroundColor: gradVix,
-    borderWidth: 2.5,
-    pointRadius: 0,
-    pointHoverRadius: 0,
-    fill: true,
-    tension: 0.3,
-    spanGaps: true,
-    normalized: true,
-    segment: makeVixSegment(isPct ? sliced.vixPct : sliced.vixVals, market.id),
-    yAxisID: isPct ? 'yShared' : 'yVix',
-    order: 4,
-    hidden: wasHidden('vix', vixHiddenDefault),
+      // 恐慌指数不再用绿→红情绪色阶给曲线分段着色（需求2：统一低饱和中性色）
+      segment: makeSegment(values),
+      yAxisID: isPct ? 'yShared' : (isFear ? 'yFear' : 'yPrice'),
+      // 批次C·需求2：恐慌指数渲染层级在股指下方（order 最小）
+      order: isFear ? 1 : i + 2,
+      hidden: wasHidden(def.key),
+    };
   });
-
-  if (market.symbols.vix2) {
-    const vix2Data = isPct ? sliced.vix2Pct : sliced.vix2Vals;
-    seriesKeys.push('vix2');
-    const gradVix2 = ctx.createLinearGradient(0, 0, 0, 460);
-    const rv2 = parseInt(market.colors.vix2.slice(1, 3), 16);
-    const gv2 = parseInt(market.colors.vix2.slice(3, 5), 16);
-    const bv2 = parseInt(market.colors.vix2.slice(5, 7), 16);
-    gradVix2.addColorStop(0, `rgba(${rv2},${gv2},${bv2},0.18)`);
-    gradVix2.addColorStop(1, `rgba(${rv2},${gv2},${bv2},0)`);
-    datasets.push({
-      label: `${market.names.vix2}`,
-      data: vix2Data,
-      borderColor: market.colors.vix2,
-      backgroundColor: gradVix2,
-      borderWidth: 2.5,
-      pointRadius: 0,
-      pointHoverRadius: 0,
-      fill: true,
-      tension: 0.3,
-      spanGaps: true,
-      normalized: true,
-      segment: makeVixSegment(isPct ? sliced.vix2Pct : sliced.vix2Vals, market.id),
-      yAxisID: isPct ? 'yShared' : 'yVix2',
-      order: 5,
-      hidden: wasHidden('vix2', true),
-    });
-  }
 
   currentSeriesKeys = seriesKeys;
 
@@ -2000,7 +1937,7 @@ function buildChart(aligned, resetViewport = false) {
         // 左侧按 resolveAxisGutter 精确预留，保证数值与百分比完整展示
         padding: { left: axisGutter, right: 0, top: 0, bottom: 0 }
       },
-      scales: buildScales(isPct, market, sliced),
+      scales: buildScales(isPct, market, sliced, logRange),
       animation: { duration: 250, easing: 'easeOutQuart' },
     },
     plugins: [endpointValueTagsPlugin],
@@ -2009,7 +1946,7 @@ function buildChart(aligned, resetViewport = false) {
 
   currentAligned = aligned;
 
-  function buildScales(pct, m, slicedData) {
+  function buildScales(pct, m, slicedData, logRange) {
     const xScale = {
       offset: false,
       bounds: 'data',
@@ -2071,54 +2008,63 @@ function buildChart(aligned, resetViewport = false) {
         yShared: hiddenYAxis('left', true),
       };
     } else {
-      // ── Percentage-normalized Y axes ──────────────────────────────
-      // Ensures same visual height = same % change across all index series
-      const normRanges = slicedData ? computeNormalizedRanges(slicedData, m) : {};
+      // ── 批次B·需求1 + 批次C·需求2 ─────────────────────────────
+      // 股指：共用一根隐藏对数轴 yPrice（窗口首日归一化=100 × 错位系数，
+      //       对数轴上乘常数=垂直平移，陡峭度可比）；min/max 显式写死。
+      // 恐慌指数：独占一根隐藏对数轴 yFear（原始点位，min/max 由阈值派生）。
+      const scales = { x: xScale };
 
-      const scales = {
-        x: xScale,
-        yIdx1: hiddenYAxis('left', true, normRanges.idx1?.min, normRanges.idx1?.max),
-        yIdx2: hiddenYAxis('right', false, normRanges.idx2?.min, normRanges.idx2?.max),
-        yVix: hiddenYAxis('right', false),
+      scales.yPrice = {
+        type: 'logarithmic',
+        position: 'left',
+        grid: { color: 'rgba(255,255,255,.05)', drawTicks: false },
+        ticks: { display: false },
+        border: { display: false },
+        title: { display: false },
+        afterFit: (axis) => { axis.width = 0; },
+        min: logRange?.min ?? 1,
+        max: logRange?.max ?? 100,
       };
-      if (m.symbols.idx3) {
-        scales.yIdx3 = hiddenYAxis('left', false, normRanges.idx3?.min, normRanges.idx3?.max);
-      }
-      if (m.symbols.vix2) {
-        scales.yVix2 = hiddenYAxis('right', false);
-      }
+
+      const fa = fearAxisRange(m);
+      scales.yFear = {
+        type: 'logarithmic',
+        position: 'right',
+        display: false,
+        grid: { drawOnChartArea: false },
+        ticks: { display: false },
+        border: { display: false },
+        title: { display: false },
+        min: fa.min,
+        max: fa.max,
+      };
       return scales;
     }
   }
 }
 
 // ── Format Tooltip HTML ──────────────────────────────────────
-function fmtValWithChgHTML(vals, idx, isPctMode, pcts) {
-  if (!vals || !Array.isArray(vals)) return '<span class="tt-missing">数据缺失</span>';
-  const cur = vals[idx];
-
-  // Missing data: show 缺失 label
-  if (cur == null || isNaN(cur)) {
-    return '<span class="tt-missing">数据缺失</span>';
-  }
-
+// 批次C·需求4：股指行 = 真实点位 + 区间累计涨跌幅（相对窗口首日原始值）。
+// 基准来自 currentPlotBase（buildChart 时锁定在时间范围起始日），拖拽平移不重算。
+function fmtRangeHTML(cur, baseVal) {
+  if (cur == null || isNaN(cur)) return '<span class="tt-missing">数据缺失</span>';
   const curStr = fmt(cur);
-
-  // 寻找前一个有效交易日（即上一日），计算单日涨跌幅 (Day-over-Day Change)
-  let prevIdx = idx - 1;
-  while (prevIdx >= 0 && (vals[prevIdx] == null || isNaN(vals[prevIdx]))) prevIdx--;
-
-  if (prevIdx < 0 || vals[prevIdx] == null || vals[prevIdx] === 0) {
-    return `${curStr} <span class="tt-chg zero">(+0.00%)</span>`;
+  if (baseVal == null || baseVal === 0) {
+    return `${curStr} <span class="tt-chg zero">(区间 +0.00%)</span>`;
   }
-
-  const prev = vals[prevIdx];
-  const diff = cur - prev;
-  const pct = (diff / prev) * 100;
-
+  const pct = (cur - baseVal) / baseVal * 100;
   const sign = pct > 0 ? '+' : '';
   const cls = pct > 0 ? 'up' : (pct < 0 ? 'down' : 'zero');
-  return `${curStr} <span class="tt-chg ${cls}">(${sign}${pct.toFixed(2)}%)</span>`;
+  return `${curStr} <span class="tt-chg ${cls}">(区间 ${sign}${pct.toFixed(2)}%)</span>`;
+}
+
+// 批次C·需求4：恐慌指数行 = 原始数值 + 档位文字（<low 低波平稳 / low–high 温和波动 / >high 情绪高压）。
+// 低波动=绿、高压=红，与底部说明卡片阈值同源（fear.low/high 配置）。
+function fmtBandHTML(cur, fear) {
+  if (cur == null || isNaN(cur)) return '<span class="tt-missing">数据缺失</span>';
+  const band = cur < fear.low ? '低波平稳' : (cur <= fear.high ? '温和波动' : '情绪高压');
+  const cls = cur < fear.low ? 'down' : (cur <= fear.high ? 'zero' : 'up');
+  return `${fmt(cur)} <span class="tt-chg ${cls}">${band}</span>`;
 }
 
 function updateTooltipContent(chart, idx) {
@@ -2148,70 +2094,29 @@ function updateTooltipContent(chart, idx) {
     `);
   }
 
-  // Determine VIX dot color dynamically (green-to-red gradient)
-  const vixVal = aligned.vixVals[idx];
-  const vixDotColor = (vixVal != null && !isNaN(vixVal))
-    ? getVixColor(vixVal, currentMarket)
-    : market.colors.vix;
-
+  // 按配置遍历所有序列（N 泛化）；恐慌指数用情绪色阶着色、显示档位文字
+  const defs = seriesOf(market);
   let dsIdx = 0;
 
-  if (!isHidden(dsIdx)) {
-    rows.push(`
-      <div class="tooltip-row">
-        <span class="tt-dot" style="background:${market.colors.idx1}"></span>
-        <span class="tt-label">${market.names.idx1}</span>
-        <span class="tt-val">${fmtValWithChgHTML(aligned.idx1Vals, idx, isPct, aligned.idx1Pct)}</span>
-      </div>`);
-  }
-  dsIdx++;
-
-  if (!isHidden(dsIdx)) {
-    rows.push(`
-      <div class="tooltip-row">
-        <span class="tt-dot" style="background:${market.colors.idx2}"></span>
-        <span class="tt-label">${market.names.idx2}</span>
-        <span class="tt-val">${fmtValWithChgHTML(aligned.idx2Vals, idx, isPct, aligned.idx2Pct)}</span>
-      </div>`);
-  }
-  dsIdx++;
-
-  if (market.symbols.idx3) {
-    if (!isHidden(dsIdx)) {
-      rows.push(`
-        <div class="tooltip-row">
-          <span class="tt-dot" style="background:${market.colors.idx3}"></span>
-          <span class="tt-label">${market.names.idx3}</span>
-          <span class="tt-val">${fmtValWithChgHTML(aligned.idx3Vals, idx, isPct, aligned.idx3Pct)}</span>
-        </div>`);
+  defs.forEach((def) => {
+    if (isHidden(dsIdx)) { dsIdx++; return; }
+    const vals = aligned.series?.[def.key] || [];
+    const val = vals[idx];
+    let dotColor = def.color;
+    if (def.isFearIndex === true && val != null && !isNaN(val)) {
+      dotColor = getVixColor(val, currentMarket);
     }
+    const valHtml = (def.isFearIndex === true)
+      ? fmtBandHTML(val, market.fear)
+      : fmtRangeHTML(val, currentPlotBase?.[def.key]);
+    rows.push(`
+      <div class="tooltip-row">
+        <span class="tt-dot" style="background:${dotColor}"></span>
+        <span class="tt-label">${def.name}</span>
+        <span class="tt-val">${valHtml}</span>
+      </div>`);
     dsIdx++;
-  }
-
-  if (!isHidden(dsIdx)) {
-    rows.push(`
-      <div class="tooltip-row">
-        <span class="tt-dot" style="background:${vixDotColor}"></span>
-        <span class="tt-label">${market.names.vix}</span>
-        <span class="tt-val">${fmtValWithChgHTML(aligned.vixVals, idx, isPct, aligned.vixPct)}</span>
-      </div>`);
-  }
-  dsIdx++;
-
-  if (market.symbols.vix2) {
-    if (!isHidden(dsIdx)) {
-      const vix2Val = (aligned.vix2Vals || [])[idx];
-      const vix2DotColor = (vix2Val != null && !isNaN(vix2Val))
-        ? getVixColor(vix2Val, currentMarket)
-        : market.colors.vix2;
-      rows.push(`
-        <div class="tooltip-row">
-          <span class="tt-dot" style="background:${vix2DotColor}"></span>
-          <span class="tt-label">${market.names.vix2}</span>
-          <span class="tt-val">${fmtValWithChgHTML(aligned.vix2Vals, idx, isPct, aligned.vix2Pct)}</span>
-        </div>`);
-    }
-  }
+  });
 
   $('tooltipRows').innerHTML = rows.join('');
   positionTooltip(chart);
@@ -2529,7 +2434,8 @@ async function switchMarket(marketId) {
 
   // Update Chart Title & Hint
   $('chartTitle').textContent = `${market.title.split('—')[1]}指数走势叠加图`;
-  $('chartHint').textContent = market.chartHint;
+  // 批次C·需求7：统一副标题文案（不再使用各板块 chartHint）
+  $('chartHint').textContent = CHART_HINT;
 
 
   // Load Market Data & Render UI
@@ -2539,7 +2445,8 @@ async function switchMarket(marketId) {
     $('updateTime').textContent = `更新: ${nowStr()}`;
 
     // 不截断底层原始数据，保留全量 10 年历史数据，使手势拖拽可以自由漫游到更早历史
-    const aligned = alignData(rawData);
+    // 注意传入 rawData.raw（{key: 序列} 映射）；rawData 本身还含 rawFear 等元数据，不可直接对齐
+    const aligned = alignData(rawData.raw);
     const rangeIndices = getRangeIndices(aligned, currentRange);
     viewportState.start = rangeIndices.start;
     viewportState.end = rangeIndices.end;
@@ -2551,7 +2458,7 @@ async function switchMarket(marketId) {
     buildChart(aligned, false);
   } catch (err) {
     console.error(`[switchMarket error]:`, err);
-    showError(`无法加载 ${market.names.idx1} 数据: ${err.message}`);
+    showError(`无法加载 ${market.indices[0]?.name || market.id} 数据: ${err.message}`);
   } finally {
     hideLoading();
   }
@@ -2567,7 +2474,7 @@ function activateRange(range) {
   if (!marketDataStore[currentMarket]) return;
 
   const rawData = marketDataStore[currentMarket];
-  const aligned = alignData(rawData);
+  const aligned = alignData(rawData.raw);
   const rangeIndices = getRangeIndices(aligned, range);
   viewportState.start = rangeIndices.start;
   viewportState.end = rangeIndices.end;
@@ -2615,23 +2522,21 @@ async function init() {
   if (saved) {
     if (saved.market && MARKETS[saved.market]) currentMarket = saved.market;
     if (saved.range) currentRange = saved.range;
-    if (saved.chartMode) chartMode = saved.chartMode;
+    // 批次C·需求5：模式切换按钮已删除，显示模式固定为绝对数值，忽略旧设置
+    chartMode = 'absolute';
     if (typeof saved.mddEnabled === 'boolean') mddEnabled = saved.mddEnabled;
     if (saved.hiddenSeries && typeof saved.hiddenSeries === 'object') {
       Object.keys(saved.hiddenSeries).forEach(mktKey => {
         if (hiddenSeries[mktKey] && saved.hiddenSeries[mktKey]) {
+          // 旧版位置命名键（idx1/idx2/idx3/vix）先迁移到新配置 key，再合并
+          migrateLegacyHiddenKeys(mktKey, saved.hiddenSeries[mktKey], hiddenSeries[mktKey]);
           Object.assign(hiddenSeries[mktKey], saved.hiddenSeries[mktKey]);
         }
       });
     }
   }
 
-  // ② 同步控件的初始 UI 样式
-  const modeBtn = $('modeToggle');
-  if (modeBtn) {
-    modeBtn.classList.toggle('active', chartMode === 'pct');
-    modeBtn.textContent = chartMode === 'pct' ? '绝对数值' : '涨跌幅 %';
-  }
+  // ② 同步控件的初始 UI 样式（模式切换按钮已随需求5删除，仅同步时间范围）
   document.querySelectorAll('.range-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === currentRange);
   });
