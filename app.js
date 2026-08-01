@@ -652,6 +652,46 @@ function alignData(filtered) {
   };
 }
 
+// ── Compute start/end indices for range selection on full 10-year aligned dataset ─────
+function getRangeIndices(aligned, range) {
+  if (!aligned || !aligned.timestamps || !aligned.timestamps.length) {
+    return { start: 0, end: 0 };
+  }
+  const total = aligned.timestamps.length;
+  const lastTs = aligned.timestamps[total - 1];
+  let cutoff = 0;
+
+  if (range === 'ytd') {
+    const d = new Date();
+    cutoff = Date.UTC(d.getUTCFullYear(), 0, 1) / 1000;
+  } else {
+    const cutoffs = {
+      '1m': 30 * 86400,
+      '3m': 90 * 86400,
+      '6m': 180 * 86400,
+      '1y': 365 * 86400,
+      '2y': 730 * 86400,
+      '5y': 5 * 365 * 86400,
+      '10y': 10 * 365 * 86400,
+    };
+    const span = cutoffs[range] || cutoffs['1y'];
+    cutoff = lastTs - span;
+  }
+
+  let startIdx = 0;
+  if (range !== '10y') {
+    const foundIdx = aligned.timestamps.findIndex(t => t >= cutoff);
+    if (foundIdx !== -1) {
+      startIdx = foundIdx;
+    }
+  }
+
+  return {
+    start: startIdx,
+    end: Math.max(0, total - 1),
+  };
+}
+
 
 
 // ── Render Dynamic UI Components ─────────────────────────────
@@ -1517,6 +1557,11 @@ function updateChartViewport() {
   const isPct = chartMode === 'pct';
   const market = MARKETS[currentMarket];
 
+  // 拖拽平移时同步更新 KPI 显示
+  if (marketDataStore[currentMarket]) {
+    renderKPIs(market, sliced, marketDataStore[currentMarket]);
+  }
+
   const idx1Data = isPct ? sliced.idx1Pct : sliced.idx1Vals;
   const idx2Data = isPct ? sliced.idx2Pct : sliced.idx2Vals;
   const idx3Data = isPct ? sliced.idx3Pct : sliced.idx3Vals;
@@ -2207,37 +2252,29 @@ function setupTabListeners() {
       }
     }, { passive: false });
 
-    // ── Mouse Drag to Pan (Left Click Dragging) ────────────────
+    // ── Mouse & Touch Drag to Pan (Left Click / Touch Dragging) ────────────────
     let isDragging = false;
     let dragStartX = 0;
     let dragStartViewport = { start: 0, end: 0 };
 
-    chartWrap.addEventListener('mousedown', (e) => {
+    function startDrag(clientX) {
       if (!chartInstance || !currentAligned || !currentAligned.labels.length) return;
-      if (e.button !== 0) return; // Left click only
+      isDragging = true;
+      dragStartX = clientX;
+      dragStartViewport = {
+        start: viewportState.start ?? 0,
+        end: viewportState.end ?? (currentAligned.labels.length - 1)
+      };
+      chartWrap.classList.add('dragging');
+    }
 
-      const rect = chartInstance.canvas.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-      const chartArea = chartInstance.chartArea;
-      if (!chartArea) return;
-
-      if (mouseX >= chartArea.left && mouseX <= chartArea.right &&
-        mouseY >= chartArea.top && mouseY <= chartArea.bottom) {
-        isDragging = true;
-        dragStartX = e.clientX;
-        dragStartViewport = { start: viewportState.start ?? 0, end: viewportState.end ?? (currentAligned.labels.length - 1) };
-        chartWrap.classList.add('dragging');
-      }
-    });
-
-    window.addEventListener('mousemove', (e) => {
+    function moveDrag(clientX) {
       if (!isDragging || !chartInstance || !currentAligned) return;
       const total = currentAligned.labels.length;
       const chartArea = chartInstance.chartArea;
       if (!chartArea) return;
 
-      const deltaX = e.clientX - dragStartX;
+      const deltaX = clientX - dragStartX;
       const currentLen = dragStartViewport.end - dragStartViewport.start + 1;
       const pxPerPoint = (chartArea.right - chartArea.left) / Math.max(1, currentLen - 1);
 
@@ -2265,15 +2302,47 @@ function setupTabListeners() {
         clearCrosshairOverlay();
         tooltip.classList.add('hidden');
       }
-    });
+    }
 
-    const stopDrag = () => {
+    function stopDrag() {
       if (isDragging) {
         isDragging = false;
         chartWrap.classList.remove('dragging');
       }
-    };
+    }
+
+    chartWrap.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      const rect = chartInstance.canvas.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const chartArea = chartInstance.chartArea;
+      if (!chartArea) return;
+
+      if (mouseX >= chartArea.left && mouseX <= chartArea.right &&
+        mouseY >= chartArea.top && mouseY <= chartArea.bottom) {
+        startDrag(e.clientX);
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => moveDrag(e.clientX));
     window.addEventListener('mouseup', stopDrag);
+
+    // Touch events for mobile dragging
+    chartWrap.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        startDrag(touch.clientX);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchmove', (e) => {
+      if (isDragging && e.touches.length === 1) {
+        moveDrag(e.touches[0].clientX);
+      }
+    }, { passive: true });
+
+    window.addEventListener('touchend', stopDrag);
   }
 }
 
@@ -2301,14 +2370,17 @@ async function switchMarket(marketId) {
     setStatus('数据已加载', true);
     $('updateTime').textContent = `更新: ${nowStr()}`;
 
-    const filtered = applyRange(rawData, currentRange);
-    const aligned = alignData(filtered);
+    // 不截断底层原始数据，保留全量 10 年历史数据，使手势拖拽可以自由漫游到更早历史
+    const aligned = alignData(rawData);
+    const rangeIndices = getRangeIndices(aligned, currentRange);
+    viewportState.start = rangeIndices.start;
+    viewportState.end = rangeIndices.end;
 
-    renderKPIs(market, aligned, rawData);
+    const sliced = getSlicedAligned(aligned, viewportState.start, viewportState.end);
+    renderKPIs(market, sliced, rawData);
     autoScaleMobileKpi();
     renderAnnotations(market);
-    // 同 activateRange：切换板块后视口必须回到完整区间
-    buildChart(aligned, true);
+    buildChart(aligned, false);
   } catch (err) {
     console.error(`[switchMarket error]:`, err);
     showError(`无法加载 ${market.names.idx1} 数据: ${err.message}`);
@@ -2327,14 +2399,15 @@ function activateRange(range) {
   if (!marketDataStore[currentMarket]) return;
 
   const rawData = marketDataStore[currentMarket];
-  const filtered = applyRange(rawData, range);
-  const aligned = alignData(filtered);
+  const aligned = alignData(rawData);
+  const rangeIndices = getRangeIndices(aligned, range);
+  viewportState.start = rangeIndices.start;
+  viewportState.end = rangeIndices.end;
 
-  renderKPIs(MARKETS[currentMarket], aligned, rawData);
+  const sliced = getSlicedAligned(aligned, viewportState.start, viewportState.end);
+  renderKPIs(MARKETS[currentMarket], sliced, rawData);
   autoScaleMobileKpi();
-  // 必须重置缩放视口：否则会沿用上一区间的 [start, end]，
-  // 例如从 1 年切到 10 年时只显示 2517 个点里的前 261 个（十年前的那一年）
-  buildChart(aligned, true);
+  buildChart(aligned, false);
 }
 
 
