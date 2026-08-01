@@ -729,8 +729,36 @@ body.theme-gold #tab-gold.active {
 }
 
 .mdd-sub {
-  font-size: 0.68rem;
+  font-size: 0.65rem;
   font-family: 'JetBrains Mono', monospace;
   color: #cbd5e1;
   white-space: nowrap;
+  letter-spacing: -0.2px;
+}
+
+/* ===== Toast Notification Banner ===== */
+.notice-toast {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 99999;
+  background: rgba(24, 18, 12, 0.94);
+  border: 1px solid rgba(245, 158, 11, 0.55);
+  color: #fbbf24;
+  padding: 10px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.82rem;
+  font-weight: 600;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 12px rgba(245, 158, 11, 0.25);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transform: translateY(-20px) scale(0.96);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.notice-toast.show {
+  transform: translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
 }

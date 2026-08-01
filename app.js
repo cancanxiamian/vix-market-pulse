@@ -95,10 +95,114 @@ function getSlicedAligned(aligned, start, end) {
 // Cache fetched market raw data in memory
 const marketDataStore = { us: null, cn: null, gold: null };
 
+// ── LocalCache — localStorage 增量与历史数据缓存模块 ────────────────
+const LocalCache = {
+  VERSION: 2,
+  PREFIX:  'vmp_cache_',
+  MAX_AGE_MS: 7 * 24 * 60 * 60 * 1000, // 7 天
+
+  _key(symbol) {
+    return this.PREFIX + symbol;
+  },
+
+  get(symbol) {
+    try {
+      const raw = localStorage.getItem(this._key(symbol));
+      if (!raw) return null;
+      const cache = JSON.parse(raw);
+      if (cache.v !== this.VERSION) return null;
+      const ageMs = Date.now() - (cache.savedAt * 1000);
+      if (ageMs > this.MAX_AGE_MS) {
+        localStorage.removeItem(this._key(symbol));
+        return null;
+      }
+      return cache.series; // 返回 [{t, v, source, date}, ...] 数组
+    } catch (e) {
+      return null;
+    }
+  },
+
+  set(symbol, series) {
+    try {
+      const entry = {
+        v: this.VERSION,
+        savedAt: Math.floor(Date.now() / 1000),
+        symbol,
+        series,
+      };
+      localStorage.setItem(this._key(symbol), JSON.stringify(entry));
+    } catch (e) {
+      console.warn('[LocalCache] 写入失败:', e.message);
+    }
+  },
+
+  clearAll() {
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(this.PREFIX)) toRemove.push(k);
+    }
+    toRemove.forEach(k => localStorage.removeItem(k));
+  }
+};
+
+window.__clearVmpCache = () => LocalCache.clearAll();
+
+// ── Toast 通知与消息提醒 ──────────────────────────────────────────
+function showNotice(msg, isWarning = true, duration = 6000) {
+  let toast = $('appNoticeToast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'appNoticeToast';
+    toast.className = 'notice-toast';
+    document.body.appendChild(toast);
+  }
+  toast.innerHTML = `${isWarning ? '⚠️' : 'ℹ️'} ${msg}`;
+  toast.classList.add('show');
+  clearTimeout(showNotice._timer);
+  showNotice._timer = setTimeout(() => {
+    toast.classList.remove('show');
+  }, duration);
+}
+
+// ── UserSettings — 用户 UI 偏好持久化（localStorage）────────────────
+const UserSettings = {
+  KEY: 'vmp_user_settings_v1',
+
+  load() {
+    try {
+      const raw = localStorage.getItem(this.KEY);
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  },
+
+  save() {
+    try {
+      const payload = {
+        market: currentMarket,
+        range: currentRange,
+        chartMode,
+        mddEnabled,
+        hiddenSeries: JSON.parse(JSON.stringify(hiddenSeries)),
+      };
+      localStorage.setItem(this.KEY, JSON.stringify(payload));
+    } catch (e) {
+      console.warn('[UserSettings] save failed:', e.message);
+    }
+  },
+};
+
 // 图例隐藏状态，按板块分别记忆：{ us: { vix: true }, ... }
 // 切换时间跨度 / 涨跌幅模式都会重建 Chart 实例，若不在此留档，
 // 用户手动隐藏的曲线会被数据集默认值重新点亮。
-const hiddenSeries = { us: {}, cn: {}, gold: {} };
+const hiddenSeries = {
+  us:   { idx2: true, idx3: true }, // 默认隐藏：费城半导体 (idx2)、标普 500 (idx3)
+  cn:   { idx2: true, idx3: true }, // 默认隐藏：上证综合指数 (idx2)、科创 50 (idx3)
+  gold: { idx2: true },            // 默认隐藏：COMEX 白银期货 (idx2)
+};
 
 // 当前图表数据集下标 → 序列键（idx1/idx2/idx3/vix/vix2），供图例回写隐藏状态
 let currentSeriesKeys = [];
@@ -125,6 +229,12 @@ function fmt(n, decimals = 2) {
 function fmtDate(ts) {
   const d = new Date(ts * 1000);
   return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
+function fmtDateDot(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts * 1000);
+  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
 }
 
 function fmtDateFull(ts) {
@@ -216,18 +326,64 @@ function getVixColor(val, marketId) {
 }
 
 // ── Data Fetching Logic ──────────────────────────────────────
+function createTimeoutSignal(ms) {
+  if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function') {
+    try { return AbortSignal.timeout(ms); } catch (_) {}
+  }
+  const controller = new AbortController();
+  setTimeout(() => controller.abort(), ms);
+  return controller.signal;
+}
+
+async function _backgroundLatestUpdate(symbol) {
+  try {
+    const isLocalServer = window.location.protocol !== 'file:';
+    if (!isLocalServer) return;
+    const res = await fetch(LOCAL_PROXY + encodeURIComponent(symbol), {
+      signal: createTimeoutSignal(6000)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const json = await res.json();
+    const parsed = parseMergedData(json, symbol);
+    if (parsed && parsed.length) {
+      LocalCache.set(symbol, parsed);
+    }
+  } catch (e) {
+    console.warn(`[_backgroundLatestUpdate failed for ${symbol}]:`, e.message);
+    setStatus('最新数据更新受阻（已使用本地数据）', true, true);
+    showNotice(`无法连接网络/获取 ${symbol} 最新数据，当前展示本地已缓存历史数据`, true, 6000);
+  }
+}
+
 async function fetchSymbol(symbol) {
+  // ① 优先读取 localStorage 本地历史缓存，极速秒开 (< 10ms)
+  const cachedSeries = LocalCache.get(symbol);
+  if (cachedSeries && Array.isArray(cachedSeries) && cachedSeries.length > 10) {
+    _backgroundLatestUpdate(symbol);
+    return cachedSeries.map(d => ({
+      t: d.t,
+      v: (d.v != null && !isNaN(d.v)) ? d.v : null,
+      missing: d.source === 'missing',
+      source: d.source || 'yahoo',
+    }));
+  }
+
+  // ② 无本地缓存时走代理抓取
   const isLocalServer = window.location.protocol !== 'file:';
   if (isLocalServer) {
     try {
       const res = await fetch(LOCAL_PROXY + encodeURIComponent(symbol), {
-        signal: AbortSignal.timeout(4500)
+        signal: createTimeoutSignal(4500)
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
-      return parseMergedData(json, symbol);
+      const parsed = parseMergedData(json, symbol);
+      if (parsed && parsed.length) LocalCache.set(symbol, parsed);
+      return parsed;
     } catch (e) {
       console.warn(`[local proxy fetch failed for ${symbol}]:`, e.message);
+      showNotice(`抓取 ${symbol} 最新行情失败: ${e.message}`, true, 6000);
+      setStatus(`抓取 ${symbol} 数据失败`, false);
       return [];
     }
   }
@@ -242,16 +398,18 @@ async function fetchSymbol(symbol) {
   let lastErr;
   for (const makeUrl of CORS_PROXIES) {
     try {
-      const res = await fetch(makeUrl(symbol), { signal: AbortSignal.timeout(18000) });
+      const res = await fetch(makeUrl(symbol), { signal: createTimeoutSignal(8000) });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const text = await res.text();
       const json = JSON.parse(text);
-      return parseYahooJson(json, symbol);
+      const parsed = parseYahooJson(json, symbol);
+      if (parsed && parsed.length) LocalCache.set(symbol, parsed);
+      return parsed;
     } catch (e) {
       lastErr = e;
     }
   }
-  throw lastErr || new Error('All fetch strategies failed');
+  return [];
 }
 
 function parseYahooJson(json, symbol) {
@@ -686,7 +844,7 @@ window.addEventListener('resize', autoScaleMobileKpi);
 // ── Maximum Drawdown (MDD) Financial Algorithm & Flowing Rainbow Shader ─────
 let rainbowHuePhase = 0;
 let rainbowAnimFrameId = null;
-let mddEnabled = false; // 最大回撤标注开关：默认关闭，点击标题右侧「最大回撤」按钮才渲染
+let mddEnabled = true; // 最大回撤标注开关：默认开启，点击标题右侧「最大回撤」按钮可关闭/开启
 
 function startRainbowAnimationLoop() {
   if (rainbowAnimFrameId) return;
@@ -757,8 +915,8 @@ function calcMaxDrawdown(sliced, market) {
           mddPct,
           peakIdx: bestPeakIdx,
           troughIdx: bestTroughIdx,
-          peakDate: sliced.labels[bestPeakIdx],
-          troughDate: sliced.labels[bestTroughIdx],
+          peakDate: fmtDateDot(sliced.timestamps[bestPeakIdx]),
+          troughDate: fmtDateDot(sliced.timestamps[bestTroughIdx]),
           peakVal,
           troughVal,
           days: Math.max(1, Math.round((sliced.timestamps[bestTroughIdx] - sliced.timestamps[bestPeakIdx]) / 86400)),
@@ -1498,7 +1656,7 @@ function buildChart(aligned, resetViewport = false) {
       segment: makeSegment(idx2Data),
       yAxisID: isPct ? 'yShared' : 'yIdx2',
       order: 2,
-      hidden: wasHidden('idx2'),
+      hidden: wasHidden('idx2', true),
     },
   ];
 
@@ -1520,7 +1678,7 @@ function buildChart(aligned, resetViewport = false) {
       segment: makeSegment(idx3Data),
       yAxisID: isPct ? 'yShared' : 'yIdx3',
       order: 3,
-      hidden: wasHidden('idx3'),
+      hidden: wasHidden('idx3', true),
     });
   }
 
@@ -1607,7 +1765,10 @@ function buildChart(aligned, resetViewport = false) {
             else ci.show(dsIdx);
 
             const key = currentSeriesKeys[dsIdx];
-            if (key) hiddenSeries[currentMarket][key] = !ci.isDatasetVisible(dsIdx);
+            if (key) {
+              hiddenSeries[currentMarket][key] = !ci.isDatasetVisible(dsIdx);
+              UserSettings.save();
+            }
 
             // 隐藏的曲线不该再出现在十字线标签里
             clearCrosshairOverlay();
@@ -1768,7 +1929,7 @@ function updateTooltipContent(chart, idx) {
           <span class="mdd-badge">${mdd.mddPct.toFixed(2)}%</span>
         </div>
         <div class="mdd-sub">
-          📅 ${mdd.peakDate.slice(5)} → ${mdd.troughDate.slice(5)} (${mdd.days}天) &nbsp;•&nbsp; $${fmt(mdd.peakVal)}→$${fmt(mdd.troughVal)}
+          🗓️ ${mdd.peakDate} → ${mdd.troughDate} (${mdd.days}天) &nbsp;•&nbsp; $${fmt(mdd.peakVal)}→$${fmt(mdd.troughVal)}
         </div>
       </div>
     `);
@@ -1902,6 +2063,7 @@ function setupTabListeners() {
       if (currentAligned) {
         buildChart(currentAligned);
       }
+      UserSettings.save();
     });
   }
 
@@ -1909,9 +2071,11 @@ function setupTabListeners() {
   // overlay 动画循环每帧重绘，开关即时生效，无需重建 Chart
   const mddBtn = $('mddToggle');
   if (mddBtn) {
+    mddBtn.classList.toggle('active', mddEnabled);
     mddBtn.addEventListener('click', () => {
       mddEnabled = !mddEnabled;
       mddBtn.classList.toggle('active', mddEnabled);
+      UserSettings.save();
     });
   }
 
@@ -2117,6 +2281,7 @@ function setupTabListeners() {
 async function switchMarket(marketId) {
   if (!MARKETS[marketId]) return;
   currentMarket = marketId;
+  UserSettings.save();
   const market = MARKETS[marketId];
 
   // Update Body Theme & Active Tab Buttons
@@ -2133,7 +2298,6 @@ async function switchMarket(marketId) {
   // Load Market Data & Render UI
   try {
     const rawData = await loadMarketData(marketId);
-    hideLoading();
     setStatus('数据已加载', true);
     $('updateTime').textContent = `更新: ${nowStr()}`;
 
@@ -2148,11 +2312,14 @@ async function switchMarket(marketId) {
   } catch (err) {
     console.error(`[switchMarket error]:`, err);
     showError(`无法加载 ${market.names.idx1} 数据: ${err.message}`);
+  } finally {
+    hideLoading();
   }
 }
 
 function activateRange(range) {
   currentRange = range;
+  UserSettings.save();
   document.querySelectorAll('.range-btn').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.range === range);
   });
@@ -2193,21 +2360,55 @@ function showError(msg) {
   errorText.textContent = msg || '数据加载失败';
 }
 
-function setStatus(msg, ok = true) {
-  statusBadge.innerHTML = `<span class="pulse-dot"></span>${msg}`;
-  statusBadge.style.background = ok ? 'rgba(34,197,94,.12)' : 'rgba(239,68,68,.12)';
-  statusBadge.style.borderColor = ok ? 'rgba(34,197,94,.3)' : 'rgba(239,68,68,.3)';
-  statusBadge.style.color = ok ? '#86efac' : '#fca5a5';
+function setStatus(msg, ok = true, warning = false) {
+  statusBadge.innerHTML = `<span class="pulse-dot" style="${warning ? 'background:#f59e0b;box-shadow:0 0 8px #f59e0b' : ''}"></span>${msg}`;
+  statusBadge.style.background = ok ? (warning ? 'rgba(245,158,11,.15)' : 'rgba(34,197,94,.12)') : 'rgba(239,68,68,.12)';
+  statusBadge.style.borderColor = ok ? (warning ? 'rgba(245,158,11,.4)' : 'rgba(34,197,94,.3)') : 'rgba(239,68,68,.3)';
+  statusBadge.style.color = ok ? (warning ? '#fbbf24' : '#86efac') : '#fca5a5';
 }
 
 // ── Application Entry ────────────────────────────────────────
 async function init() {
+  // ① 读取已保存的用户 UI 视图偏好
+  const saved = UserSettings.load();
+  if (saved) {
+    if (saved.market && MARKETS[saved.market]) currentMarket = saved.market;
+    if (saved.range) currentRange = saved.range;
+    if (saved.chartMode) chartMode = saved.chartMode;
+    if (typeof saved.mddEnabled === 'boolean') mddEnabled = saved.mddEnabled;
+    if (saved.hiddenSeries && typeof saved.hiddenSeries === 'object') {
+      Object.keys(saved.hiddenSeries).forEach(mktKey => {
+        if (hiddenSeries[mktKey] && saved.hiddenSeries[mktKey]) {
+          Object.assign(hiddenSeries[mktKey], saved.hiddenSeries[mktKey]);
+        }
+      });
+    }
+  }
+
+  // ② 同步控件的初始 UI 样式
+  const modeBtn = $('modeToggle');
+  if (modeBtn) {
+    modeBtn.classList.toggle('active', chartMode === 'pct');
+    modeBtn.textContent = chartMode === 'pct' ? '绝对数值' : '涨跌幅 %';
+  }
+  document.querySelectorAll('.range-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.range === currentRange);
+  });
+
   setupTabListeners();
   if (retryBtn) {
     retryBtn.addEventListener('click', () => switchMarket(currentMarket));
   }
-  await switchMarket('us');
+  await switchMarket(currentMarket);
   startRainbowAnimationLoop();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    await init();
+  } catch (e) {
+    console.error('[init crashed]:', e);
+    hideLoading();
+    showError(`初始化失败: ${e.message}`);
+  }
+});
