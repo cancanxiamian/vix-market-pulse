@@ -6,24 +6,24 @@
  */
 
 const http = require('http');
-const fs   = require('fs');
+const fs = require('fs');
 const path = require('path');
-const url  = require('url');
+const url = require('url');
 
 const ds = require('./lib/datasource');
 
-const PORT       = process.env.PORT || 3399;
+const PORT = process.env.PORT || 3399;
 const STATIC_DIR = __dirname;
-const IS_VERCEL  = !!process.env.VERCEL;
+const IS_VERCEL = !!process.env.VERCEL;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
-  '.css':  'text/css; charset=utf-8',
-  '.js':   'application/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.js': 'application/javascript; charset=utf-8',
   '.json': 'application/json',
-  '.ico':  'image/x-icon',
-  '.png':  'image/png',
-  '.svg':  'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
 };
 
 // ── /api/merged?symbol=X ────────────────────────────────────
@@ -104,7 +104,7 @@ function serveStatic(reqPath, res) {
 
 // ── HTTP Server ─────────────────────────────────────────────
 const server = http.createServer((req, res) => {
-  const parsed  = url.parse(req.url, true);
+  const parsed = url.parse(req.url, true);
   const reqPath = parsed.pathname;
 
   if (req.method === 'OPTIONS') {

@@ -137,7 +137,7 @@ function nowStr() {
 }
 
 // 涨跌配色遵循 A 股习惯：涨红跌绿（与 .kpi-chg / .tt-chg 一致）
-const UP_COLOR   = '#f43f5e';
+const UP_COLOR = '#f43f5e';
 const DOWN_COLOR = '#10b981';
 const FLAT_COLOR = '#94a3b8';
 const chgColor = (pct) => (pct > 0 ? UP_COLOR : pct < 0 ? DOWN_COLOR : FLAT_COLOR);
@@ -165,8 +165,8 @@ function getVixColor(val, marketId) {
   if (val == null || isNaN(val)) return 'rgba(148,163,184,0.5)';
 
   const configs = {
-    us:   { low: 14, warning: 20, panic: 27, extreme: 38 },
-    cn:   { low: 18, warning: 25, panic: 32, extreme: 45 },
+    us: { low: 14, warning: 20, panic: 27, extreme: 38 },
+    cn: { low: 18, warning: 25, panic: 32, extreme: 45 },
     gold: { low: 11, warning: 16, panic: 22, extreme: 30 },
   };
 
@@ -338,10 +338,10 @@ async function loadMarketData(marketId) {
   const results = await Promise.all(fetchPromises);
   let ri = 0;
   const vixDataRaw = results[ri++];
-  const idx1Data   = results[ri++];
-  const idx2Data   = results[ri++];
-  const idx3Data   = market.symbols.idx3 ? results[ri++] : null;
-  const vix2Data   = market.symbols.vix2 ? results[ri++] : null;
+  const idx1Data = results[ri++];
+  const idx2Data = results[ri++];
+  const idx3Data = market.symbols.idx3 ? results[ri++] : null;
+  const vix2Data = market.symbols.vix2 ? results[ri++] : null;
 
   let vixData = vixDataRaw;
   const realVixCount = vixDataRaw ? vixDataRaw.filter(d => d.v != null && !isNaN(d.v)).length : 0;
@@ -631,11 +631,11 @@ function autoScaleKpiBar() {
   // Calculate scale ratio and apply to font-size and gap proportionally
   const ratio = availW / contentW;
   const baseFontPx = parseFloat(style.fontSize) || 14;
-  const baseGapPx  = parseFloat(style.gap) || 16;
+  const baseGapPx = parseFloat(style.gap) || 16;
 
   // Clamp: never go below 9px font (readability floor)
   const newFontPx = Math.max(9, baseFontPx * ratio * 0.97);
-  const newGapPx  = Math.max(4, baseGapPx  * ratio * 0.97);
+  const newGapPx = Math.max(4, baseGapPx * ratio * 0.97);
 
   bar.style.fontSize = newFontPx.toFixed(1) + 'px';
   bar.style.gap = newGapPx.toFixed(1) + 'px';
@@ -686,6 +686,7 @@ window.addEventListener('resize', autoScaleMobileKpi);
 // ── Maximum Drawdown (MDD) Financial Algorithm & Flowing Rainbow Shader ─────
 let rainbowHuePhase = 0;
 let rainbowAnimFrameId = null;
+let mddEnabled = false; // 最大回撤标注开关：默认关闭，点击标题右侧「最大回撤」按钮才渲染
 
 function startRainbowAnimationLoop() {
   if (rainbowAnimFrameId) return;
@@ -798,7 +799,7 @@ function drawRainbowOverlayOnly() {
     const offsetX = mainRect.left - overlayRect.left;
     const offsetY = mainRect.top - overlayRect.top;
     const sliced = currentSliced || currentAligned;
-    const mdd = calcMaxDrawdown(sliced, MARKETS[currentMarket]);
+    const mdd = mddEnabled ? calcMaxDrawdown(sliced, MARKETS[currentMarket]) : null;
     if (mdd) {
       drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY);
     }
@@ -862,10 +863,10 @@ function drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY) {
     }
   }
 
-  // 3️⃣ Pass 1: 霓虹外发光软晕 Pass (Glow Pass)
+  // 3️⃣ Pass 1: 霓虹外发光软晕 Pass (Glow Pass) — 线细、靠 shadowBlur 撑出霓虹光晕
   ctx.shadowColor = `hsl(${(rainbowHuePhase * 1.5) % 360}, 100%, 65%)`;
   ctx.shadowBlur = 14;
-  ctx.lineWidth = 6.5;
+  ctx.lineWidth = 3.4;
   ctx.strokeStyle = neonGrad;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
@@ -873,11 +874,11 @@ function drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY) {
 
   // 4️⃣ Pass 2: 核心强光高亮折线 Pass (Core Bright Pass)
   ctx.shadowBlur = 0;
-  ctx.lineWidth = 3.2;
+  ctx.lineWidth = 1.6;
   ctx.strokeStyle = '#ffffff'; // 核心极白提亮
   ctx.stroke();
 
-  ctx.lineWidth = 2.8;
+  ctx.lineWidth = 1.4;
   ctx.strokeStyle = neonGrad;
   ctx.stroke();
 
@@ -1019,7 +1020,7 @@ function drawCrosshairOverlay(idx, mouseX) {
   const caBottom = chartArea.bottom + offsetY;
 
   // 0️⃣ 先画当前视口的最大回撤彩虹流动区间 (Rainbow Drawdown Zone)
-  const mdd = calcMaxDrawdown(activeData, MARKETS[currentMarket]);
+  const mdd = mddEnabled ? calcMaxDrawdown(activeData, MARKETS[currentMarket]) : null;
   if (mdd) {
     drawRainbowDrawdown(ctx, mdd, chartArea, offsetX, offsetY);
   }
@@ -1361,7 +1362,7 @@ function updateChartViewport() {
   const idx1Data = isPct ? sliced.idx1Pct : sliced.idx1Vals;
   const idx2Data = isPct ? sliced.idx2Pct : sliced.idx2Vals;
   const idx3Data = isPct ? sliced.idx3Pct : sliced.idx3Vals;
-  const vixData  = isPct ? sliced.vixPct  : sliced.vixVals;
+  const vixData = isPct ? sliced.vixPct : sliced.vixVals;
   const vix2Data = isPct ? sliced.vix2Pct : sliced.vix2Vals;
 
   chartInstance.data.labels = sliced.labels;
@@ -1702,9 +1703,9 @@ function buildChart(aligned, resetViewport = false) {
 
       const scales = {
         x: xScale,
-        yIdx1: hiddenYAxis('left',  true,  normRanges.idx1?.min, normRanges.idx1?.max),
+        yIdx1: hiddenYAxis('left', true, normRanges.idx1?.min, normRanges.idx1?.max),
         yIdx2: hiddenYAxis('right', false, normRanges.idx2?.min, normRanges.idx2?.max),
-        yVix:  hiddenYAxis('right', false),
+        yVix: hiddenYAxis('right', false),
       };
       if (m.symbols.idx3) {
         scales.yIdx3 = hiddenYAxis('left', false, normRanges.idx3?.min, normRanges.idx3?.max);
@@ -1757,8 +1758,8 @@ function updateTooltipContent(chart, idx) {
 
   const rows = [];
 
-  // 🌈 计算并呈现当前视口最大回撤 (Compact MDD Card)
-  const mdd = calcMaxDrawdown(aligned, market);
+  // 🌈 计算并呈现当前视口最大回撤 (Compact MDD Card) — 仅在「最大回撤」开关打开时显示
+  const mdd = mddEnabled ? calcMaxDrawdown(aligned, market) : null;
   if (mdd && idx >= mdd.peakIdx && idx <= mdd.troughIdx) {
     rows.push(`
       <div class="mdd-tooltip-card">
@@ -1862,8 +1863,13 @@ function positionTooltip(chart) {
   // 左右两侧边界受限保护：若超出右侧或左侧容器，平滑靠边贴壁收拢，尽量保持在竖线上方居中
   left = Math.max(10, Math.min(left, panelRect.width - ttW - 10));
 
-  // 2️⃣ 纵向定位：进一步向上大幅拉升 (top: -32px)，高高悬挂在顶栏区域，离下方 Canvas 绘图区 0 接触，彻底避免遮挡折线
-  const top = -32;
+  // 2️⃣ 纵向定位：悬浮在竖线正上方——底边贴着绘图区顶部（绝不遮挡折线），
+  //    水平居中于竖线；空间不足时允许向上溢出面板（盖过标题/图例/KPI 栏间隙无妨），
+  //    仅钳制在浏览器视口顶边之内
+  const canvasTopInPanel = canvasRect.top - panelRect.top;
+  const plotTop = canvasTopInPanel + (chart.chartArea ? chart.chartArea.top : 0);
+  const ttH = tooltip.offsetHeight || 120;
+  const top = Math.max(4 - panelRect.top, plotTop - ttH - 6);
 
   tooltip.style.left = left + 'px';
   tooltip.style.top = top + 'px';
@@ -1896,6 +1902,16 @@ function setupTabListeners() {
       if (currentAligned) {
         buildChart(currentAligned);
       }
+    });
+  }
+
+  // 「最大回撤」开关：点击才渲染彩虹回撤段/高低点锚点/Tooltip 回撤卡片，
+  // overlay 动画循环每帧重绘，开关即时生效，无需重建 Chart
+  const mddBtn = $('mddToggle');
+  if (mddBtn) {
+    mddBtn.addEventListener('click', () => {
+      mddEnabled = !mddEnabled;
+      mddBtn.classList.toggle('active', mddEnabled);
     });
   }
 
@@ -1968,7 +1984,7 @@ function setupTabListeners() {
 
       // 严格判定：只有当鼠标指针真正位于折线图 Canvas 核心绘图区 (Chart Area) 内部时，才触发放大缩小
       if (mouseX < chartArea.left || mouseX > chartArea.right ||
-          mouseY < chartArea.top  || mouseY > chartArea.bottom) {
+        mouseY < chartArea.top || mouseY > chartArea.bottom) {
         return; // 光标位于两侧边缘或外部时，不拦截滚轮，恢复正常页面滚动
       }
 

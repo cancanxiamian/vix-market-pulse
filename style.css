@@ -393,6 +393,14 @@ body.theme-gold #tab-gold.active {
 }
 .mode-btn:hover { opacity: .85; transform: scale(1.03); }
 
+/* 最大回撤开关：与「涨跌幅 %」同款（.mode-btn），仅激活态加霓虹高亮 */
+.mdd-toggle-btn.active {
+  background: linear-gradient(135deg, rgba(239,68,68,.22), rgba(168,85,247,.22));
+  border-color: rgba(244,114,182,.55);
+  color: #f9a8d4;
+  box-shadow: 0 0 10px rgba(236,72,153,.25);
+}
+
 .chart-wrap {
   position: relative;
   padding: 20px 0px 16px 0px;
