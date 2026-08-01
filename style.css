@@ -762,3 +762,36 @@ body.theme-gold #tab-gold.active {
   opacity: 1;
   pointer-events: auto;
 }
+
+/* ===== DOM Floating Endpoint Tags (允许完全超越走势图卡片外侧展示) ===== */
+.endpoint-dom-tags-container {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  pointer-events: none;
+  z-index: 18;
+  overflow: visible !important;
+}
+
+.endpoint-dom-pill {
+  position: absolute;
+  padding: 2px 7px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  background: rgba(15, 23, 42, 0.92);
+  border: 1.2px solid;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  white-space: nowrap;
+  pointer-events: auto;
+  transition: top 0.1s ease-out;
+}
+
+.endpoint-dom-pill.left-tag {
+  transform: translate(-100%, -50%);
+}
+
+.endpoint-dom-pill.right-tag {
+  transform: translate(0, -50%);
+}

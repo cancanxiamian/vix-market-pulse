@@ -1615,9 +1615,177 @@ function updateChartViewport() {
 
   // 缩放平移会改变涨跌幅基准（视口首值），标签宽度随之变化，留白必须跟着重算
   chartInstance.options.layout.padding.left = resolveAxisGutter(sliced, market, isPct);
+  chartInstance.options.layout.padding.right = 0;
 
   chartInstance.update('none');
 }
+
+// ── DOM Floating Endpoint Tags (智能自适应外靠/内靠防裁切) ─────────────
+function renderEndpointDOMTags(chart) {
+  const chartWrap = $('mainChart') ? $('mainChart').parentNode : null;
+  if (!chartWrap) return;
+
+  let container = $('endpointDOMTagsContainer');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'endpointDOMTagsContainer';
+    container.className = 'endpoint-dom-tags-container';
+    chartWrap.appendChild(container);
+  }
+
+  const { chartArea } = chart;
+  if (!chartArea || !chart.data.datasets || chart.data.datasets.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const isPct = chartMode === 'pct';
+  const leftItems = [];
+  const rightItems = [];
+
+  // 获取 canvas 在 chartWrap 内的真实 offset 偏移，确保 DOM 标签与 Canvas 曲线端点 100% 垂直居中对齐
+  const canvasTop = chart.canvas ? (chart.canvas.offsetTop || 0) : 0;
+  const canvasLeft = chart.canvas ? (chart.canvas.offsetLeft || 0) : 0;
+
+  chart.data.datasets.forEach((ds, dsIdx) => {
+    if (!chart.isDatasetVisible(dsIdx)) return;
+    const meta = chart.getDatasetMeta(dsIdx);
+    if (!meta || !meta.data || meta.data.length === 0) return;
+
+    const color = ds.borderColor || '#3b82f6';
+
+    // 1. 起点 (左侧边缘)
+    const pt0 = meta.data[0];
+    const val0 = ds.data[0];
+    if (pt0 && val0 != null && !isNaN(val0)) {
+      const text = isPct ? '0.00%' : fmt(val0);
+      leftItems.push({
+        yRaw: canvasTop + pt0.y,
+        y: canvasTop + pt0.y,
+        x: canvasLeft + chartArea.left,
+        text,
+        color
+      });
+    }
+
+    // 2. 终点 (右侧边缘)
+    const lastIdx = meta.data.length - 1;
+    const ptLast = meta.data[lastIdx];
+    const valLast = ds.data[lastIdx];
+    if (ptLast && valLast != null && !isNaN(valLast)) {
+      let text = fmt(valLast);
+      if (isPct) {
+        const sign = valLast >= 0 ? '+' : '';
+        text = `${sign}${valLast.toFixed(2)}%`;
+      }
+      rightItems.push({
+        yRaw: canvasTop + ptLast.y,
+        y: canvasTop + ptLast.y,
+        x: canvasLeft + chartArea.right,
+        text,
+        color
+      });
+    }
+  });
+
+  // 垂直碰撞避让
+  function resolveCollisions(items) {
+    if (items.length <= 1) return;
+    items.sort((a, b) => a.yRaw - b.yRaw);
+    const minGap = 20;
+    for (let i = 1; i < items.length; i++) {
+      if (items[i].y - items[i - 1].y < minGap) {
+        items[i].y = items[i - 1].y + minGap;
+      }
+    }
+  }
+
+  resolveCollisions(leftItems);
+  resolveCollisions(rightItems);
+
+  // 测量文本真实宽度的 Canvas Context
+  const cCtx = renderEndpointDOMTags._ctx
+    || (renderEndpointDOMTags._ctx = document.createElement('canvas').getContext('2d'));
+  cCtx.font = '700 11.5px "JetBrains Mono", monospace';
+
+  function measurePillWidth(text) {
+    return cCtx.measureText(text).width + 16;
+  }
+
+  const wrapW = chartWrap.clientWidth || 800;
+  const wrapRect = chartWrap.getBoundingClientRect();
+  const screenW = window.innerWidth;
+
+  let html = '';
+
+  // 左侧起点胶囊 (保持向左外靠朝向，若最左侧放不下则向右平滑移进，避免裁切)
+  leftItems.forEach(item => {
+    const { x, y, text, color } = item;
+    const pillW = measurePillWidth(text);
+
+    // 默认向左外靠 (leftPx = x - 4, transform: translate(-100%, -50%))
+    let leftPx = x - 4;
+
+    // 检查左侧边缘限制
+    const globalLeftOffset = wrapRect.left;
+    const minAllowedLeft = Math.max(6, 6 - globalLeftOffset);
+    // 胶囊最左侧位置为 leftPx - pillW
+    if (leftPx - pillW < minAllowedLeft) {
+      leftPx = minAllowedLeft + pillW;
+    }
+
+    html += `
+      <div class="endpoint-dom-pill" style="
+        left: ${leftPx}px;
+        top: ${y}px;
+        transform: translate(-100%, -50%);
+        color: ${color};
+        border-color: ${color};
+        box-shadow: 0 0 8px ${color}33;
+      ">
+        ${text}
+      </div>
+    `;
+  });
+
+  // 右侧终点胶囊 (向右延伸展示；若数字太长在占用完右边宽度后会超出边界，则自动向左平移移进)
+  rightItems.forEach(item => {
+    const { x, y, text, color } = item;
+    const pillW = measurePillWidth(text);
+
+    // 默认紧贴端点圆点向右延伸 (4px, transform: translate(0, -50%))
+    let leftPx = x + 4;
+
+    // 右侧最大可用边界 (优先使用窗口右侧边缘，保留 10px 边距)
+    const maxAllowedRight = screenW - wrapRect.left - 10;
+    if (leftPx + pillW > maxAllowedRight) {
+      // 允许向左平移移进，确保右端刚好对齐边界，整个数字完整展示
+      leftPx = maxAllowedRight - pillW;
+    }
+
+    html += `
+      <div class="endpoint-dom-pill" style="
+        left: ${leftPx}px;
+        top: ${y}px;
+        transform: translate(0, -50%);
+        color: ${color};
+        border-color: ${color};
+        box-shadow: 0 0 10px ${color}40;
+      ">
+        ${text}
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+}
+
+const endpointValueTagsPlugin = {
+  id: 'endpointValueTags',
+  afterDraw(chart) {
+    renderEndpointDOMTags(chart);
+  }
+};
 
 // ── Chart.js Renderer ────────────────────────────────────────
 function buildChart(aligned, resetViewport = false) {
@@ -1835,7 +2003,7 @@ function buildChart(aligned, resetViewport = false) {
       scales: buildScales(isPct, market, sliced),
       animation: { duration: 250, easing: 'easeOutQuart' },
     },
-    plugins: [],
+    plugins: [endpointValueTagsPlugin],
   });
 
 
