@@ -149,7 +149,20 @@ vix-market-pulse/
 * Node.js **v18** 或更高版本（用到 `AbortSignal.timeout`、原生 `fetch` 语义）
 * 无需 `npm install`，项目零运行时依赖
 
-### 2. 启动项目
+### 2. 本地 Python & Miniconda 环境说明
+* **系统 Python / Conda 环境**：
+  - 本机已安装 **Miniconda3**，路径：`C:\ProgramData\miniconda3`（内置 Python 3.13.13，Conda 26.3.2）
+  - 已有虚拟环境：**`tradingagents`**（路径：`C:\Users\我是本地用户\.conda\envs\tradingagents`）
+* **项目与 Python 的关系**：
+  - 本项目（`vix-market-pulse`）属于纯前端 + Node.js 代理架构，可在无需 Python 的情况下独立运行。
+  - 本机预置的 Python/Miniconda 环境用于未来的数据清洗、量化分析脚本及 AI 智能体（如 Trading Agents）扩展。
+* **命令行启用/初始化 Conda**：
+  在 PowerShell 中运行以下命令即可将 Conda 命令自动写入环境变量：
+  ```powershell
+  & "C:\ProgramData\miniconda3\Scripts\conda.exe" init powershell
+  ```
+
+### 3. 启动项目
 ```bash
 npm start
 ```
