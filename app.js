@@ -162,8 +162,13 @@ const primaryFear = (m) => m.fears.find(f => f.isPrimary) || m.fears[0];
  *   step = SPREAD^(1/(N-1))，系数 = step^layer
  * layer 由 volWeight 升序决定（波动小的在下），volWeight 是静态常量，
  * 切换时间范围不会让曲线互相跳位置。
+ *
+ * 用户需求（2026-08-02）：「起始值调整到相近水平，便于对比增长陡峭程度」
+ * SPREAD 从 1.8 调小到 1.15 —— 三股指起点 100/107.4/115.1（原 100/134/180），
+ * 差距从 80 缩到 15，曲线几乎同起点出发但仍有微小分离，肉眼可直接比斜率。
+ * 若嫌太近/太开，改这一个常量即可（越大越开、越接近 1 越重合）。
  */
-const SPREAD = 1.8;
+const SPREAD = 1.15;
 function layerFactors(m) {
   // N 只计股指条数，恐慌指数绝不参与错位分层（isFearIndex 数据走原始点位管线）
   const n = m.indices.length;
