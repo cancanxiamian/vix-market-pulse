@@ -68,6 +68,10 @@
           <span class="chart-hint" id="chartHint">统一基准 = 区间首日 · 对数刻度 · 多线垂直错开 · 恐慌指数为背景情绪层</span>
         </div>
         <div class="toolbar-right">
+          <!-- 实时更新指示器（仅交易日盘中轮询时激活）：呼吸绿点 + 最后更新时间 -->
+          <span class="live-indicator" id="liveIndicator" title="实时数据未启用">
+            <span class="live-dot"></span><span class="live-text">实时</span>
+          </span>
           <!-- 批次C·需求5：删除「涨跌幅% / 绝对数值」模式切换按钮；保留「最大回撤」叠加层开关 -->
           <button class="mode-btn mdd-toggle-btn active" id="mddToggle" title="显示/隐藏最大回撤标注">⚡ 最大回撤</button>
           <button class="mode-btn band-toggle-btn" id="bandToggle" title="显示/隐藏恐慌指数日内高低波幅彩带">🎗 日内波幅</button>

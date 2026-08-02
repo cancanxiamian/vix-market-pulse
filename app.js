@@ -829,7 +829,17 @@ function alignData(filtered) {
 
   const dateSet = new Set();
   for (const k of keys) for (const d of maps[k].keys()) dateSet.add(d);
-  const allDates = Array.from(dateSet).sort();
+
+  // 休市日直接剔除：本板块所有序列当天都没有真实报价（数据源会给出 v=null 的占位行，
+  // 如美股 2026-07-03 独立日休市）。保留这类日期只会让前值填充造出一整行「和前一天
+  // 完全相同」的假数值，tooltip 看起来像那天有行情。
+  // 注意判据是「全部序列都无值」——某条序列历史较短（如科创50）造成的单序列空缺必须保留。
+  const allDates = Array.from(dateSet)
+    .filter(d => keys.some(k => {
+      const e = maps[k].get(d);
+      return e && e.v != null && !isNaN(e.v);
+    }))
+    .sort();
 
   const empty = { labels: [], timestamps: [], series: {}, highs: {}, lows: {}, pct: {}, missingFlags: [] };
   if (allDates.length === 0) {
@@ -961,12 +971,19 @@ function renderKPIs(marketConfig, aligned, rawData) {
   // 否则会被误读成当日行情。
   const staleTag = (chg) => {
     if (!chg?.lastTs || !latestTs || toDateStr(chg.lastTs) === toDateStr(latestTs)) return '';
+    // 周末（UTC 周六/周日）不标滞后：周末休市无新报价是预期行为，
+    // 且 Yahoo 对期货会扩展周末占位时间戳（v=null）、对恐慌指数不扩展，
+    // 导致恐慌指数 lastTs 停留在周五而与周末 latestTs 差一天——此时告警无意义。
+    // （用户选择方案 D：非交易日的「滞后」不应提示）
+    const utcDay = new Date(latestTs * 1000).getUTCDay();
+    if (utcDay === 0 || utcDay === 6) return '';
     return `<span class="kpi-stale" title="数据源未提供 ${toDateStr(latestTs)} 的数据，此处为 ${toDateStr(chg.lastTs)} 收盘值">滞后</span>`;
   };
 
   // 按配置遍历所有序列（N 条股指 + N 条恐慌指数），顺序 = indices[] + fears[]
   const defs = seriesOf(marketConfig);
   let html = '';
+  const valStrs = {};   // def.key → 本次渲染的数值字符串（翻牌检测用）
   defs.forEach((def, i) => {
     // 原始序列（含 .t/.v）优先，对齐数组兜底。
     // 恐慌指数优先用顶替前的原始序列（rawFears[key]），数据不足时回退到 raw[key]（可能为波动率补齐）。
@@ -976,18 +993,48 @@ function renderKPIs(marketConfig, aligned, rawData) {
     const alignedArr = aligned.series?.[def.key] || [];
     const chg = getSeriesChg(rawSeries, alignedArr);
     const sep = i > 0 ? '<div class="kpi-sep"></div>' : '';
+    // 数值拆成时钟号码牌数字格（每字符一格，含小数点/逗号/负号）
+    const valStr = fmt(chg.lastVal);
+    valStrs[def.key] = valStr;
     html += `
     ${sep}<div class="kpi-item" id="card-${def.key}">
       <span class="kpi-dot" style="background:${def.color}"></span>
       <span class="kpi-name">${def.name}</span>
-      <span class="kpi-val">${fmt(chg.lastVal)}</span>
+      <span class="kpi-val">${fmtFlipDigits(valStr)}</span>
       <span class="kpi-chg ${chg.cls}">${chg.text}</span>${staleTag(chg)}
     </div>`;
   });
 
   kpiRow.innerHTML = html;
-  // After DOM settles, auto-scale font to fit all items
-  requestAnimationFrame(() => autoScaleKpiBar());
+  // 翻牌检测：与上次渲染的数值比较，有变化的卡 → 数字格触发翻转动画
+  requestAnimationFrame(() => {
+    if (!renderKPIs._lastVals) renderKPIs._lastVals = {};
+    defs.forEach((def) => {
+      const cur = valStrs[def.key];
+      const prev = renderKPIs._lastVals[def.key];
+      renderKPIs._lastVals[def.key] = cur;
+      if (prev != null && prev !== cur) {
+        const card = document.getElementById('card-' + def.key);
+        if (card) {
+          card.querySelectorAll('.flip-digit').forEach(d => {
+            d.classList.remove('flipping');
+            void d.offsetWidth;              // 强制 reflow 以重启动画
+            d.classList.add('flipping');
+          });
+        }
+      }
+    });
+    autoScaleKpiBar();
+  });
+}
+
+// ── 时钟号码牌：把数值字符串拆成逐字符数字格 ──
+function fmtFlipDigits(str) {
+  return String(str).split('').map(ch => {
+    if (ch === ' ') return ' ';
+    const esc = ch === '<' ? '&lt;' : ch === '>' ? '&gt;' : ch;
+    return `<span class="flip-digit">${esc}</span>`;
+  }).join('');
 }
 
 
@@ -1115,6 +1162,161 @@ function startRainbowAnimationLoop() {
     rainbowAnimFrameId = requestAnimationFrame(animate);
   };
   rainbowAnimFrameId = requestAnimationFrame(animate);
+}
+
+// ── Live Updates（实时轮询：只拉增量最新点，不重取全量）────────────
+const LIVE_POLL_MS = 60 * 1000;     // 盘中轮询间隔（秒）
+const LIVE_POINT_CNT = 3;           // 每次只拉最近 3 个点（含最新）
+let liveTimer = null;
+let liveLastUpdated = null;         // 最近一次成功更新的时间戳
+let liveFailureStreak = 0;          // 连续失败次数（用于降级指示器）
+
+/**
+ * 判断是否处于「实时轮询时段」：
+ * 交易日（周一~周五）的本地 9:00-17:30 视为活跃窗口。
+ * 非交易日（周末/节假日未精确建模，周末即停）或深夜低频。
+ * 简化策略：周末完全不轮询；工作日 9:00-17:30 高频（60s），其余时段低频（5min）。
+ */
+function isTradingSession() {
+  const now = new Date();
+  const day = now.getDay();
+  if (day === 0 || day === 6) return false;          // 周末
+  const h = now.getHours(), m = now.getMinutes();
+  const mins = h * 60 + m;
+  return mins >= 9 * 60 && mins <= 17 * 60 + 30;     // 工作日 9:00~17:30
+}
+
+/** 更新实时状态：active=呼吸绿（KPI 数字心跳） / idle=灰 / error=红 */
+function setLiveIndicator(state, detail) {
+  const el = $('liveIndicator');
+  if (!el) return;
+  el.dataset.state = state || 'idle';
+  el.title = detail || '实时数据未启用';
+  // active：body 挂 .live-active，KPI 数值进入持续呼吸心跳；
+  // idle/error：移除心跳，避免非实时状态下数字一直闪动误导。
+  document.body.classList.toggle('live-active', state === 'active');
+}
+
+/** 拉取某序列最新 LIVE_POINT_CNT 个点（轻量接口，非全量） */
+async function fetchLatestPoints(symbol) {
+  const res = await fetch(`/api/latest?symbol=${encodeURIComponent(symbol)}&n=${LIVE_POINT_CNT}`, {
+    signal: createTimeoutSignal(8000),
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = await res.json();
+  return (json.latest || []).map(d => ({
+    t: d.t, v: d.v, h: d.h ?? d.v, l: d.l ?? d.v,
+    missing: d.source === 'missing',
+    source: d.source || 'yahoo',
+  }));
+}
+
+/**
+ * 把新拉到的点合并进市场数据缓存（增量：替换同日期、追加新日期），
+ * 然后重算 aligned / plot，并刷新 KPI 与图表末端。
+ * 注意：此函数不重建 Chart 实例，只更新数据后走 updateChartViewport 重绘。
+ */
+function applyLivePoint(key, points) {
+  const store = marketDataStore[currentMarket];
+  if (!store || !points || !points.length) return false;
+
+  // 合并进 raw[key]：以 t 为键，覆盖/追加
+  const mergedMap = new Map();
+  (store.raw[key] || []).forEach(d => { if (d?.t) mergedMap.set(d.t, d); });
+  let changed = false;
+  for (const p of points) {
+    if (p.t == null) continue;
+    const cur = mergedMap.get(p.t);
+    // 有更新（v 不同）或新日期 → 记录
+    if (!cur || cur.v !== p.v || cur.h !== p.h || cur.l !== p.l) changed = true;
+    mergedMap.set(p.t, p);
+  }
+  if (!changed) return false;
+  store.raw[key] = Array.from(mergedMap.values()).sort((a, b) => a.t - b.t);
+
+  // 重算当前板块的 aligned 与 plot（沿用 buildChart 的基准逻辑）
+  const market = MARKETS[currentMarket];
+  const aligned = alignData(store.raw);
+  const rangeIdx = getRangeIndices(aligned, currentRange);
+  const { plot, base } = computePlotData(aligned, market, rangeIdx.start);
+  currentAligned = aligned;
+  currentPlotData = plot;
+  currentPlotBase = base;
+
+  // 视口保持当前范围；若视口贴到最右（用户在看最新），末端自然延伸
+  const viewEnd = viewportState.end ?? (aligned.labels.length - 1);
+  const newMax = aligned.labels.length - 1;
+  if (viewEnd === null || viewEnd >= newMax - 1) {
+    // 视口贴右：让末端跟随到最新
+    viewportState.end = newMax;
+  }
+  currentSliced = getSlicedAligned(aligned, viewportState.start ?? rangeIdx.start, viewportState.end ?? rangeIdx.end);
+
+  // 刷新 KPI + 图表（轻量更新路径）
+  renderKPIs(market, currentSliced, store);
+  // 有变化的序列对应 KPI 卡闪亮提示（实时更新视觉反馈）。
+  // renderKPIs 是 innerHTML 重建，必须在重建后补类名。
+  const card = document.getElementById('card-' + key);
+  if (card) {
+    card.classList.add('kpi-flash');
+  }
+  if (chartInstance) {
+    updateChartViewport();
+    chartInstance.update('none');
+  }
+  return true;
+}
+
+/** 单轮轮询：并发拉当前板块全部序列的最新点，有变化则应用 */
+async function pollLiveData() {
+  const market = MARKETS[currentMarket];
+  if (!market || !marketDataStore[currentMarket]) return;
+  const defs = seriesOf(market);
+  try {
+    const results = await Promise.all(
+      defs.map(d => fetchLatestPoints(d.symbol).then(pts => ({ key: d.key, pts })))
+    );
+    let applied = 0;
+    for (const { key, pts } of results) {
+      if (applyLivePoint(key, pts)) applied++;
+    }
+    if (applied > 0) {
+      liveLastUpdated = Date.now();
+      liveFailureStreak = 0;
+      setLiveIndicator('active', `实时更新于 ${new Date().toLocaleTimeString('zh-CN', { hour12: false })}（${applied} 个序列有变化）`);
+    } else if (liveLastUpdated) {
+      setLiveIndicator('active', `实时更新于 ${new Date(liveLastUpdated).toLocaleTimeString('zh-CN', { hour12: false })}`);
+    }
+  } catch (e) {
+    liveFailureStreak++;
+    console.warn(`[WARN] [live poll failed]:`, e.message);
+    if (liveFailureStreak >= 3) {
+      setLiveIndicator('error', `实时更新失败：${e.message}`);
+    } else if (liveLastUpdated) {
+      setLiveIndicator('active', `实时更新于 ${new Date(liveLastUpdated).toLocaleTimeString('zh-CN', { hour12: false })}（重试中）`);
+    }
+  }
+}
+
+/** 启动实时轮询（init 后调用） */
+function startLiveUpdates() {
+  stopLiveUpdates();
+  // 立即试探一次（非交易日/非盘中也能拿到收盘末点，展示最新状态）
+  pollLiveData();
+  const tick = () => {
+    const active = isTradingSession();
+    // 非盘中低频（5 分钟），盘中高频（60s）
+    liveTimer = setTimeout(() => {
+      pollLiveData();
+      tick();
+    }, active ? LIVE_POLL_MS : LIVE_POLL_MS * 5);
+  };
+  tick();
+}
+
+/** 停止实时轮询 */
+function stopLiveUpdates() {
+  if (liveTimer) { clearTimeout(liveTimer); liveTimer = null; }
 }
 
 /**
@@ -2405,9 +2607,13 @@ function updateTooltipContent(chart, idx) {
 
   const rows = [];
 
-  // 🌈 计算并呈现当前视口最大回撤 (Compact MDD Card) — 仅在「最大回撤」开关打开时显示
+  // 🌈 最大回撤（Compact MDD Card）作为 tooltip 第一行（rows[0]）。
+  // tooltip 用 position:fixed + z-index 9999（见 .crosshair-tooltip），
+  // 贴 plot 顶上方贴十字线居中 → MDD 行始终在最上层、永远可见、不挡折线。
+  // 永远显示 MDD（不限制 idx）：用户反馈在谷底之后悬停时条件过滤掉了 MDD，
+  // 用户期望"只要窗口里有 MDD 就始终在 tooltip 顶部可见"，便于随时参考。
   const mdd = mddEnabled ? calcMaxDrawdown(aligned, market) : null;
-  if (mdd && idx >= mdd.peakIdx && idx <= mdd.troughIdx) {
+  if (mdd) {
     rows.push(`
       <div class="mdd-tooltip-card">
         <div class="mdd-head">
@@ -2461,11 +2667,20 @@ function updateTooltipContent(chart, idx) {
     if (pVal != null && sVal != null && !isNaN(pVal) && !isNaN(sVal)) {
       const diff = sVal - pVal;
       const cls = diff >= 0 ? 'up' : 'down'; // 溢价为正 → 暖色（A股习惯红涨）
+      // 括号内是价差相对区间首日的变化（溢价扩大/收窄），口径与股指行的「区间」一致。
+      // 此前这里误把 diff 本身当作变化量渲染，导致同一个数字显示两遍。
+      const pBase = currentPlotBase?.[primary.key];
+      const sBase = currentPlotBase?.[secondary.key];
+      let deltaHtml = '';
+      if (pBase != null && sBase != null && !isNaN(pBase) && !isNaN(sBase)) {
+        const d = diff - (sBase - pBase);
+        deltaHtml = ` <span class="tt-chg ${d >= 0 ? 'up' : 'down'}">(区间 ${d >= 0 ? '+' : ''}${d.toFixed(2)})</span>`;
+      }
       rows.push(`
         <div class="tooltip-row spread-row">
           <span class="tt-dot" style="background:linear-gradient(90deg, ${secondary.color}, ${primary.color})"></span>
           <span class="tt-label">${secondary.short} − ${primary.short} 价差</span>
-          <span class="tt-val">${fmt(diff)} <span class="tt-chg ${cls}">(${diff >= 0 ? '+' : ''}${diff.toFixed(2)})</span></span>
+          <span class="tt-val"><span class="tt-chg ${cls}">${fmt(diff)}</span>${deltaHtml}</span>
         </div>`);
     }
   }
@@ -2479,28 +2694,22 @@ function positionTooltip(chart) {
 
   tooltip.classList.remove('hidden');
   const ttW = tooltip.offsetWidth || 250;
-
-  const panel = document.querySelector('.chart-panel');
-  if (!panel) return;
-  const panelRect = panel.getBoundingClientRect();
-  const canvasRect = chart.canvas.getBoundingClientRect();
-
-  const canvasLeftInPanel = canvasRect.left - panelRect.left;
-  const xInPanel = canvasLeftInPanel + crosshairState.x;
-
-  // 1️⃣ 横向定位：优先 100% 严格垂直居中于悬浮竖线 (xInPanel) 的正上方
-  let left = xInPanel - ttW / 2;
-
-  // 左右两侧边界受限保护：若超出右侧或左侧容器，平滑靠边贴壁收拢，尽量保持在竖线上方居中
-  left = Math.max(10, Math.min(left, panelRect.width - ttW - 10));
-
-  // 2️⃣ 纵向定位：悬浮在竖线正上方——底边贴着绘图区顶部（绝不遮挡折线），
-  //    水平居中于竖线；空间不足时允许向上溢出面板（盖过标题/图例/KPI 栏间隙无妨），
-  //    仅钳制在浏览器视口顶边之内
-  const canvasTopInPanel = canvasRect.top - panelRect.top;
-  const plotTop = canvasTopInPanel + (chart.chartArea ? chart.chartArea.top : 0);
   const ttH = tooltip.offsetHeight || 120;
-  const top = Math.max(4 - panelRect.top, plotTop - ttH - 6);
+
+  // position: fixed + 视口坐标 —— tooltip 永远全页面最顶层（z-index 9999），
+  // 向上溢出 chart-panel、盖住 KPI 栏/图例/MDD 卡也不会被遮挡（用户需求）。
+  const canvasRect = chart.canvas.getBoundingClientRect();
+  const xViewport = canvasRect.left + crosshairState.x;
+
+  // 1️⃣ 横向定位：优先严格垂直居中于悬浮竖线 (xViewport)，左右边界钳制在视口内
+  let left = xViewport - ttW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - ttW - 8));
+
+  // 2️⃣ 纵向定位：底边贴着绘图区顶部上 6px（绝不遮挡折线），
+  //    只钳制在浏览器视口顶边之内（往上溢出 panel/标签栏无妨，靠 z-index 盖住）
+  const plotTopViewport = canvasRect.top + (chart.chartArea ? chart.chartArea.top : 0);
+  let top = plotTopViewport - ttH - 6;
+  if (top < 4) top = 4;                       // 不超出视口顶部
 
   tooltip.style.left = left + 'px';
   tooltip.style.top = top + 'px';
@@ -2599,23 +2808,53 @@ function setupTabListeners() {
           drawCrosshairOverlay(bestIdx, mouseX);
           updateTooltipContent(chartInstance, bestIdx);
         });
-      } else {
-        if (crosshairState.active) {
-          crosshairState.active = false;
-          crosshairState.idx = null;
-          crosshairState.x = null;
-          clearCrosshairOverlay();
-          tooltip.classList.add('hidden');
-        }
+      } else if (crosshairState.active && !headingToTooltip(e)) {
+        // 光标离开绘图区就收起——但若它正朝 tooltip 移动（tooltip 底边在绘图区顶上方
+        // 6px，中间那条通道仍属 chart-wrap），必须放行，否则用户还没碰到 tooltip
+        // 它就被这里收掉了，根本没法移进去悬停。
+        crosshairState.active = false;
+        crosshairState.idx = null;
+        crosshairState.x = null;
+        clearCrosshairOverlay();
+        tooltip.classList.add('hidden');
       }
     });
 
-    chartWrap.addEventListener('mouseleave', () => {
+    // 光标是否落在 tooltip 或它与绘图区之间的通道内（含左右各 8px 容差）。
+    // 用于放行「从绘图区向上移进 tooltip」这段路径，避免中途被收起。
+    const headingToTooltip = (e) => {
+      if (tooltip.classList.contains('hidden')) return false;
+      const r = tooltip.getBoundingClientRect();
+      if (r.width === 0) return false;
+      const PAD = 8;
+      const inX = e.clientX >= r.left - PAD && e.clientX <= r.right + PAD;
+      // 纵向：从 tooltip 顶边到绘图区顶边（即 tooltip 本体 + 下方 6px 通道）
+      const plotTop = chartInstance.canvas.getBoundingClientRect().top
+        + (chartInstance.chartArea ? chartInstance.chartArea.top : 0);
+      const inY = e.clientY >= r.top - PAD && e.clientY <= Math.max(r.bottom, plotTop) + 2;
+      return inX && inY;
+    };
+
+    // 收起十字线与 tooltip。鼠标在「图表 ↔ tooltip」之间往返时不收起，
+    // 这样用户可以从下方移进 tooltip 查看/选取内容而不让它消失。
+    const dismissCrosshair = () => {
       crosshairState.active = false;
       crosshairState.idx = null;
       crosshairState.x = null;
       clearCrosshairOverlay();
       tooltip.classList.add('hidden');
+    };
+    // relatedTarget 为 null 表示移出窗口，按离开处理
+    const movedInto = (e, el) => !!(el && e.relatedTarget && el.contains(e.relatedTarget));
+
+    chartWrap.addEventListener('mouseleave', (e) => {
+      if (movedInto(e, tooltip)) return;   // 移进 tooltip：保留
+      dismissCrosshair();
+    });
+
+    tooltip.addEventListener('mouseleave', (e) => {
+      if (movedInto(e, chartWrap)) return; // 移回图表：保留，后续 mousemove 会继续更新
+      dismissCrosshair();
     });
 
     // ── TradingView Wheel Zoom (Strictly inside Chart Area only) ──
@@ -2821,6 +3060,8 @@ async function switchMarket(marketId) {
     autoScaleMobileKpi();
     renderAnnotations(market);
     buildChart(aligned, false);
+    // 切板块后立即拉一次该板块最新点（实时轮询加速，无需等 60s）
+    pollLiveData();
   } catch (err) {
     console.error(`[ERROR] [switchMarket error]:`, err);
     showError(`无法加载 ${market.indices[0]?.name || market.id} 数据: ${err.message}`);
@@ -2882,6 +3123,15 @@ function setStatus(msg, ok = true, warning = false) {
 
 // ── Application Entry ────────────────────────────────────────
 async function init() {
+  // ⓪ 把 tooltip 挂到 <body> 直属，脱离 .main 的层叠上下文。
+  //   .main 有 z-index:5、.header 有 z-index:10，两者同级；tooltip 原本嵌在 .main 内，
+  //   其 z-index:9999 只在 .main 内部有效，无法越过 .main 的 5 与 header 的 10 竞争，
+  //   于是向上溢出到顶栏区域的部分（最大回撤卡片）被 header 盖住。
+  //   定位用的是视口坐标 + position:fixed，改挂载点不影响任何位置计算。
+  if (tooltip && tooltip.parentElement !== document.body) {
+    document.body.appendChild(tooltip);
+  }
+
   // ① 读取已保存的用户 UI 视图偏好
   const saved = UserSettings.load();
   if (saved) {
@@ -2913,6 +3163,7 @@ async function init() {
   }
   await switchMarket(currentMarket);
   startRainbowAnimationLoop();
+  startLiveUpdates();
 }
 
 document.addEventListener('DOMContentLoaded', async () => {

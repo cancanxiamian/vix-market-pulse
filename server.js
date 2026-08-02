@@ -102,6 +102,17 @@ function serveStatic(reqPath, res) {
   });
 }
 
+// ── /api/latest?symbol=X&n=3 （实时轮询轻量接口，只回最近 n 点）──
+function serveLatest(symbol, n, res) {
+  ds.buildLatest(symbol, n, (payload) => {
+    res.writeHead(200, {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+    });
+    res.end(JSON.stringify(payload));
+  });
+}
+
 // ── HTTP Server ─────────────────────────────────────────────
 const server = http.createServer((req, res) => {
   const parsed = url.parse(req.url, true);
@@ -113,15 +124,19 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  if (reqPath === '/api/merged' || reqPath === '/api/yahoo') {
+  if (reqPath === '/api/merged' || reqPath === '/api/yahoo' || reqPath === '/api/latest') {
     const symbol = parsed.query.symbol;
     if (!symbol) {
       res.writeHead(400, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
       res.end(JSON.stringify({ error: 'symbol required' }));
       return;
     }
-    console.log(`[INFO] [${reqPath === '/api/merged' ? 'merged' : 'proxy'}] 请求: ${symbol}`);
+    console.log(`[INFO] [${reqPath.slice(5)}] 请求: ${symbol}`);
     if (reqPath === '/api/merged') serveMerged(symbol, res);
+    else if (reqPath === '/api/latest') {
+      const n = Math.max(1, Math.min(10, parseInt(parsed.query.n, 10) || 3));
+      serveLatest(symbol, n, res);
+    }
     else serveYahoo(symbol, res);
     return;
   }

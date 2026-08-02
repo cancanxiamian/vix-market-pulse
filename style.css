@@ -313,6 +313,45 @@ body.theme-gold #tab-gold.active {
   white-space: nowrap;
 }
 
+/* ── 数字时钟翻牌效果 ───────────────────────────────────────
+   KPI 数值保持原样（无小格子），更新时逐字符翻转跳字（flip clock），
+   实时激活（body.live-active）时持续霓虹发光。 */
+.flip-digit {
+  display: inline-block;
+  transform-origin: center;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+/* 实时激活：数字持续霓虹发光（LED 时钟感，弱呼吸不抢眼） */
+body.live-active .flip-digit {
+  color: #e0f2fe;
+  text-shadow: 0 0 6px rgba(56, 189, 248, .55), 0 0 14px rgba(56, 189, 248, .25);
+  animation: flipGlow 3s ease-in-out infinite;
+}
+@keyframes flipGlow {
+  0%, 100% { text-shadow: 0 0 6px rgba(56,189,248,.55), 0 0 14px rgba(56,189,248,.25); }
+  50%      { text-shadow: 0 0 10px rgba(56,189,248,.8), 0 0 22px rgba(56,189,248,.4); }
+}
+/* 数值更新瞬间：翻牌动画（时钟号码牌翻转） */
+.flip-digit.flipping {
+  animation: flipDigit .5s ease;
+}
+@keyframes flipDigit {
+  0%   { transform: rotateX(0); opacity: 1; }
+  45%  { transform: rotateX(-90deg); opacity: .25; }
+  55%  { transform: rotateX(-90deg); opacity: .25; }
+  100% { transform: rotateX(0); opacity: 1; }
+}
+
+/* 数值更新瞬间的闪亮提示（从旧值跳到新值时的强反馈） */
+.kpi-flash {
+  animation: kpiFlash .9s ease-out;
+}
+@keyframes kpiFlash {
+  0%   { text-shadow: 0 0 18px rgba(52,211,153,1); color: #a7f3d0; transform: scale(1.05); }
+  100% { text-shadow: 0 0 0 transparent; transform: scale(1); }
+}
+
 .kpi-chg {
   font-size: .85rem;
   font-weight: 600;
@@ -401,6 +440,58 @@ body.theme-gold #tab-gold.active {
   box-shadow: 0 0 10px rgba(236,72,153,.25);
 }
 
+/* 实时更新指示器（深色玻璃拟态，呼吸绿点 + 最后更新时间） */
+.live-indicator {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 12px;
+  border-radius: var(--radius-sm);
+  font-size: .74rem; font-weight: 600;
+  background: rgba(30, 41, 59, .55);
+  border: 1px solid rgba(148, 163, 184, .25);
+  color: #94a3b8;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+  transition: all .3s;
+}
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: #64748b;
+  flex-shrink: 0;
+}
+/* 状态: active（盘中轮询中，绿色呼吸） */
+.live-indicator[data-state="active"] {
+  background: linear-gradient(135deg, rgba(16,185,129,.16), rgba(34,197,94,.08));
+  border-color: rgba(52,211,153,.5);
+  color: #6ee7b7;
+}
+.live-indicator[data-state="active"] .live-dot {
+  background: #34d399;
+  box-shadow: 0 0 8px rgba(52,211,153,.8);
+  animation: livePulse 1.8s ease-in-out infinite;
+}
+/* 状态: error（连续失败，红色） */
+.live-indicator[data-state="error"] {
+  background: rgba(239,68,68,.14);
+  border-color: rgba(248,113,113,.5);
+  color: #fca5a5;
+}
+.live-indicator[data-state="error"] .live-dot {
+  background: #f87171;
+  box-shadow: 0 0 8px rgba(248,113,113,.8);
+}
+@keyframes livePulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50%      { transform: scale(1.45); opacity: .55; }
+}
+/* KPI 数值更新瞬间的闪亮提示 */
+.kpi-flash {
+  animation: kpiFlash .8s ease-out;
+}
+@keyframes kpiFlash {
+  0%   { text-shadow: 0 0 12px rgba(52,211,153,.9); color: #a7f3d0; }
+  100% { text-shadow: 0 0 0 transparent; }
+}
+
 .chart-wrap {
   position: relative;
   padding: 20px 0px 16px 0px;
@@ -455,9 +546,12 @@ body.theme-gold #tab-gold.active {
 }
 .retry-btn:hover { opacity: .85; }
 
-/* ===== Crosshair Tooltip ===== */
+/* ===== Crosshair Tooltip =====
+   position: fixed + 视口坐标：tooltip 永远全页面最顶层（z-index 9999），
+   即使向上溢出 chart-panel、盖住 KPI 栏/图例/MDD 卡片也不会被遮挡。
+   位置由 positionTooltip 用视口坐标计算。 */
 .crosshair-tooltip {
-  position: absolute; z-index: 30;
+  position: fixed; z-index: 9999;
   background: rgba(10, 15, 28, 0.96);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
@@ -465,7 +559,9 @@ body.theme-gold #tab-gold.active {
   border-radius: var(--radius-md);
   padding: 6px 12px;
   min-width: 240px;
-  pointer-events: none;
+  /* 允许鼠标移入 tooltip 而不触发隐藏（悬停查看/选取文本）；
+     离开时由 JS 的 mouseleave 判定是否真的要收起 */
+  pointer-events: auto;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.75), 0 0 0 1px rgba(255, 255, 255, 0.08);
   transition: transform 0.04s ease-out;
 }
