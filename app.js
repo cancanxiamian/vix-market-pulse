@@ -165,12 +165,36 @@ const primaryFear = (m) => m.fears.find(f => f.isPrimary) || m.fears[0];
  */
 const SPREAD = 1.8;
 function layerFactors(m) {
+  // N 只计股指条数，恐慌指数绝不参与错位分层（isFearIndex 数据走原始点位管线）
   const n = m.indices.length;
   const step = n > 1 ? Math.pow(SPREAD, 1 / (n - 1)) : 1;
   const order = [...m.indices].sort((a, b) => a.volWeight - b.volWeight);
   const out = {};
   order.forEach((idx, layer) => { out[idx.key] = Math.pow(step, layer); });
   return out;
+}
+
+/**
+ * 开发模式断言：多恐慌指数板块（如美股 VXN − VIX）若 secondary − primary 价差
+ * 持续 3+ 个交易日 < -2，console 警告。正常 secondary（VXN）中枢高于 primary（VIX），
+ * 持续负价差通常是数据管线污染（错位系数误乘 / 数据源异常），越早暴露越好。
+ */
+function checkFearSpreadWarning(aligned, market) {
+  if (market.fears.length < 2 || !aligned?.series) return;
+  const primary = primaryFear(market);
+  const secondary = market.fears.find(f => !f.isPrimary);
+  if (!secondary) return;
+  const p = aligned.series[primary.key] || [];
+  const s = aligned.series[secondary.key] || [];
+  let streak = 0;
+  for (let i = p.length - 1; i >= 0; i--) {
+    if (p[i] == null || s[i] == null || isNaN(p[i]) || isNaN(s[i])) break;
+    if (s[i] - p[i] < -2) streak++;
+    else break;
+  }
+  if (streak > 3) {
+    console.warn(`⚠️ [开发断言] ${secondary.key} − ${primary.key} 价差连续 ${streak} 个交易日低于 -2（最新 ${fmt(s[s.length-1])}−${fmt(p[p.length-1])}），疑似错位系数/数据源污染`);
+  }
 }
 
 /**
@@ -1931,6 +1955,10 @@ function buildChart(aligned, resetViewport = false) {
   const { plot: fullPlot, base: plotBase } = computePlotData(aligned, market, rangeIdx.start);
   currentPlotData = fullPlot;
   currentPlotBase = plotBase;
+
+  // 开发模式断言：多恐慌指数板块若 secondary − primary 价差持续 3+ 交易日 < -2，console 警告。
+  // 正常 VXN 中枢高于 VIX，价差为负通常是数据管线污染（如错位系数误乘），及早暴露。
+  checkFearSpreadWarning(aligned, market);
 
   // 当前视口切片（相对全量的偏移索引）
   const viewStart = viewportState.start ?? rangeIdx.start;
