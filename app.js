@@ -1775,15 +1775,16 @@ function renderEndpointDOMTags(chart) {
   const canvasTop = chart.canvas ? (chart.canvas.offsetTop || 0) : 0;
   const canvasLeft = chart.canvas ? (chart.canvas.offsetLeft || 0) : 0;
 
-  // 批次B·需求3：起点/终点标注读原始数据（aligned.series），并锁在
-  // 时间范围按钮对应的起始日（基准日）与全量末日上；拖拽平移时标注
-  // 跟随数据移动，基准日被拖出视口则标注随之消失（需求文档「冲突2」推荐）。
+  // 批次B·需求3：「起终点标注」语义 = 视口最左/最右日（窗口锚点）。
+  // 拖拽/缩放后位置永远贴在 chartArea.left/right（视口边缘），值跟视口走。
+  // 这样保证：① 标签永远在屏幕上（不因拖拽出视口而消失）
+  //          ② 标签值 = 鼠标移到视口最左/最右时的 tooltip 值，两者天然一致
   // 恐慌指数（isFearIndex）起点终点均不标注（Q3）。
   const market = MARKETS[currentMarket];
   const aligned = currentAligned;
-  const rangeIdx = aligned ? getRangeIndices(aligned, currentRange) : null;
-  const viewStart = viewportState.start ?? 0;
-  if (!rangeIdx) { container.innerHTML = ''; return; }
+  if (!aligned) { container.innerHTML = ''; return; }
+  const viewStart = Math.max(0, viewportState.start ?? 0);
+  const viewLen = (chart.data.labels || []).length;
 
   seriesOf(market).forEach((def, dsIdx) => {
     if (def.isFearIndex === true) return;              // 恐慌指数不标
@@ -1793,41 +1794,33 @@ function renderEndpointDOMTags(chart) {
     const color = def.color;
     const seriesVals = aligned.series?.[def.key] || [];
 
-    // 1. 起点 = 基准日（range 起始日）。localIdx 为视口内相对下标，越界说明不在视口内
-    const sLocal = rangeIdx.start - viewStart;
-    if (sLocal >= 0 && sLocal < meta.data.length) {
-      const pt = meta.data[sLocal];
-      const val = seriesVals[rangeIdx.start];
-      if (pt && pt.y != null && !isNaN(pt.y) && val != null && !isNaN(val)) {
-        leftItems.push({
-          yRaw: canvasTop + pt.y,
-          y: canvasTop + pt.y,
-          // 锁在数据点自身的 x 位置（不是视口边缘 chartArea.left）：
-          // 当用户拖拽把基准日拖出视口时，pt.x < chartArea.left，
-          // 胶囊渲染时自然落到视口外并被裁掉，符合「拖出视口即消失」的批次B·需求3 原意。
-          // 之前的实现锁在 chartArea.left 会让标签漂在 canvas 最左边缘、但基准日
-          // 已经不在视口里，造成「标签说自己在起点 / 鼠标在视口起点」的位置错觉。
-          x: canvasLeft + pt.x,
-          text: fmt(val),
-          color
-        });
-      }
+    // 1. 起点 = 视口最左日（meta.data[0]）。位置锁 chartArea.left，值 = seriesVals[viewStart]
+    const pt0 = meta.data[0];
+    const val0Idx = Math.min(viewStart, seriesVals.length - 1);
+    const val0 = seriesVals[val0Idx];
+    if (pt0 && pt0.y != null && !isNaN(pt0.y) && val0 != null && !isNaN(val0)) {
+      leftItems.push({
+        yRaw: canvasTop + pt0.y,
+        y: canvasTop + pt0.y,
+        x: canvasLeft + chartArea.left,
+        text: fmt(val0),
+        color
+      });
     }
 
-    // 2. 终点 = 全量末日
-    const eLocal = rangeIdx.end - viewStart;
-    if (eLocal >= 0 && eLocal < meta.data.length) {
-      const pt = meta.data[eLocal];
-      const val = seriesVals[rangeIdx.end];
-      if (pt && pt.y != null && !isNaN(pt.y) && val != null && !isNaN(val)) {
-        rightItems.push({
-          yRaw: canvasTop + pt.y,
-          y: canvasTop + pt.y,
-          x: canvasLeft + pt.x,
-          text: fmt(val),
-          color
-        });
-      }
+    // 2. 终点 = 视口最右日（meta.data[last]）。位置锁 chartArea.right，值跟到对应索引
+    const lastIdx = meta.data.length - 1;
+    const ptLast = meta.data[lastIdx];
+    const valNIdx = Math.min(viewStart + lastIdx, seriesVals.length - 1);
+    const valN = seriesVals[valNIdx];
+    if (ptLast && ptLast.y != null && !isNaN(ptLast.y) && valN != null && !isNaN(valN)) {
+      rightItems.push({
+        yRaw: canvasTop + ptLast.y,
+        y: canvasTop + ptLast.y,
+        x: canvasLeft + chartArea.right,
+        text: fmt(valN),
+        color
+      });
     }
   });
 
