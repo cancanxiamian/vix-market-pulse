@@ -795,3 +795,12 @@ body.theme-gold #tab-gold.active {
 .endpoint-dom-pill.right-tag {
   transform: translate(0, -50%);
 }
+
+/* 日内波幅：tooltip 第二行（日内高/低 + 档位）与开关按钮激活态 */
+.tt-dim { color: var(--text-muted); font-size: .72rem; font-weight: 500; }
+.tt-fear-high { display: block; margin-top: 2px; font-size: .78rem; white-space: nowrap; }
+.band-toggle-btn.active {
+  background: rgba(236, 72, 153, .16);
+  border-color: rgba(236, 72, 153, .45);
+  color: #f9a8d4;
+}

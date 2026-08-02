@@ -56,7 +56,7 @@ const MARKETS = {
         key: 'vxn', name: 'VXN 恐慌指数', short: 'VXN', symbol: '^VXN',
         desc: '^VXN · CBOE 纳斯达克100 波动率', color: '#8fa3c2',
         isFearIndex: true, isPrimary: false, low: 20, high: 32,
-        lineDash: [4, 3], // 线型区分：VIX 实线、VXN 虚线（图例同时体现颜色与线型）
+        // 实线：与 VIX 的区分改为只靠颜色（VIX #7e8fa5 灰蓝 / VXN #8fa3c2 偏蓝）
         // 锚点由 .workbuddy/calibrate_fear_stops.js 校准（真实 2514 点分位数）
         colorStops: [
           { v: 13.82, c: '#3B82F6' },  // 5%
@@ -231,7 +231,7 @@ const fearAxisRange = (m, realFearCts = {}) => {
 
 /**
  * 恐慌指数曲线情绪色阶：按当前段两端均值用该指数自己的 colorStops 锚点插值。
- * 曲线风格已与股指统一（线宽 2.2 / 无填充 / 最上层）；VXN 等 secondary 用 lineDash 区分。
+ * 曲线风格已与股指统一（线宽 2.2 / 无填充 / 最上层）；同板块多条恐慌指数靠颜色区分。
  */
 function makeFearSegment(fearDataArr, stops) {
   return {
@@ -324,13 +324,18 @@ function getSlicedAligned(aligned, start, end) {
   const total = aligned.labels.length;
   const s = Math.max(0, Math.min(total - 1, start ?? 0));
   const e = Math.max(s, Math.min(total - 1, end ?? (total - 1)));
-  const series = {}, pct = {};
+  const series = {}, pct = {}, highs = {}, lows = {};
   for (const k of Object.keys(aligned.series || {})) series[k] = aligned.series[k].slice(s, e + 1);
   for (const k of Object.keys(aligned.pct || {}))    pct[k]    = aligned.pct[k].slice(s, e + 1);
+  // 日内高低随视口同步切片，彩带才能跟着缩放平移走
+  for (const k of Object.keys(aligned.highs || {}))  highs[k]  = aligned.highs[k].slice(s, e + 1);
+  for (const k of Object.keys(aligned.lows || {}))   lows[k]   = aligned.lows[k].slice(s, e + 1);
   return {
     labels: aligned.labels.slice(s, e + 1),
     timestamps: aligned.timestamps.slice(s, e + 1),
     series,
+    highs,
+    lows,
     pct,
     missingFlags: aligned.missingFlags.slice(s, e + 1),
     startIndex: s,
@@ -432,6 +437,7 @@ const UserSettings = {
         range: currentRange,
         chartMode,
         mddEnabled,
+        bandEnabled,
         hiddenSeries: JSON.parse(JSON.stringify(hiddenSeries)),
       };
       localStorage.setItem(this.KEY, JSON.stringify(payload));
@@ -596,9 +602,13 @@ async function fetchSymbol(symbol) {
   const cachedSeries = LocalCache.get(symbol);
   if (cachedSeries && Array.isArray(cachedSeries) && cachedSeries.length > 10) {
     _backgroundLatestUpdate(symbol);
+    const num = (x) => (x != null && !isNaN(x)) ? x : null;
     return cachedSeries.map(d => ({
       t: d.t,
-      v: (d.v != null && !isNaN(d.v)) ? d.v : null,
+      v: num(d.v),
+      // 日内高低必须一并透传：此处若只保留 t/v，彩带在走缓存的加载路径下会退化成零宽
+      h: num(d.h) ?? num(d.v),
+      l: num(d.l) ?? num(d.v),
       missing: d.source === 'missing',
       source: d.source || 'yahoo',
     }));
@@ -681,9 +691,13 @@ function parseMergedData(json, symbol) {
     if (json.crossValidation?.discrepancies?.length) {
       console.warn(`[WARN] ${symbol} 两源数据校验偏差>1%: ${json.crossValidation.discrepancies.length} 个交易日`, json.crossValidation.discrepancies);
     }
+    const num = (x) => (x != null && !isNaN(x)) ? x : null;
     return json.series.map(d => ({
       t: d.t,
-      v: (d.v != null && !isNaN(d.v)) ? d.v : null,
+      v: num(d.v),
+      // 日内高低（恐慌指数彩带用），缺失时退回收盘价 → 彩带零宽
+      h: num(d.h) ?? num(d.v),
+      l: num(d.l) ?? num(d.v),
       missing: d.source === 'missing',
       source: d.source || 'yahoo'
     }));
@@ -812,15 +826,17 @@ function alignData(filtered) {
   for (const k of keys) for (const d of maps[k].keys()) dateSet.add(d);
   const allDates = Array.from(dateSet).sort();
 
-  const empty = { labels: [], timestamps: [], series: {}, pct: {}, missingFlags: [] };
+  const empty = { labels: [], timestamps: [], series: {}, highs: {}, lows: {}, pct: {}, missingFlags: [] };
   if (allDates.length === 0) {
-    keys.forEach(k => { empty.series[k] = []; empty.pct[k] = []; });
+    keys.forEach(k => { empty.series[k] = []; empty.highs[k] = []; empty.lows[k] = []; empty.pct[k] = []; });
     return empty;
   }
 
   const series = {};
-  keys.forEach(k => { series[k] = []; });
-  const last = {};
+  // highs/lows：恐慌指数「日内波幅」彩带的上下边界，与 series 同索引对齐
+  const highs = {}, lows = {};
+  keys.forEach(k => { series[k] = []; highs[k] = []; lows[k] = []; });
+  const last = {}, lastH = {}, lastL = {};
   const commonTimestamps = [], labels = [], missingFlags = [];
 
   for (const dateStr of allDates) {
@@ -834,6 +850,14 @@ function alignData(filtered) {
       const v = (e?.v != null && !isNaN(e.v)) ? e.v : (last[k] ?? null);   // 前值填充
       if (v != null) last[k] = v; else anyMissing = true;
       series[k].push(v);
+
+      // 日内高低同样前值填充；该日无高低数据时退回收盘价（彩带零宽）
+      const hv = (e?.h != null && !isNaN(e.h)) ? e.h : (v != null ? v : (lastH[k] ?? null));
+      const lv = (e?.l != null && !isNaN(e.l)) ? e.l : (v != null ? v : (lastL[k] ?? null));
+      if (hv != null) lastH[k] = hv;
+      if (lv != null) lastL[k] = lv;
+      highs[k].push(hv);
+      lows[k].push(lv);
     }
 
     commonTimestamps.push(t);
@@ -850,7 +874,7 @@ function alignData(filtered) {
   const pct = {};
   keys.forEach(k => { pct[k] = calcPct(series[k]); });
 
-  return { labels, timestamps: commonTimestamps, series, pct, missingFlags };
+  return { labels, timestamps: commonTimestamps, series, highs, lows, pct, missingFlags };
 }
 
 // ── Compute start/end indices for range selection on full 10-year aligned dataset ─────
@@ -1071,6 +1095,7 @@ window.addEventListener('resize', autoScaleMobileKpi);
 // ── Maximum Drawdown (MDD) Financial Algorithm & Flowing Rainbow Shader ─────
 let rainbowHuePhase = 0;
 let rainbowAnimFrameId = null;
+let bandEnabled = false; // 日内波幅彩带开关：默认关闭，与最大回撤互不影响（独立开关）
 let mddEnabled = true; // 最大回撤标注开关：默认开启，点击标题右侧「最大回撤」按钮可关闭/开启
 
 function startRainbowAnimationLoop() {
@@ -1922,6 +1947,151 @@ function renderEndpointDOMTags(chart) {
   container.innerHTML = html;
 }
 
+/**
+ * 恐慌指数「日内波幅」彩带。
+ *
+ * 层级：挂 beforeDatasetsDraw，画在所有数据集之下（股指曲线、恐慌指数折线都在其上）。
+ *
+ * 着色：整个绘图区**只创建一条**纵向渐变，从 yFear 轴的 max 位置到 min 位置，
+ * 色标由该指数的 colorStops 按「数值 → 轴像素 → gradient offset」映射而来，
+ * 再用彩带路径 clip() 后填充。
+ *
+ * 不给每天单独生成渐变的原因有二：
+ *   1) 长窗口下 2500 个 gradient 对象性能极差；
+ *   2) 会破坏「同一颜色 = 同一数值」——平静日的窄带若各自从 low 渐变到 high，
+ *      顶端红色可能只对应 VIX 16，严重误导。
+ * 全局渐变让彩带自带图例：轴上任意高度颜色恒定。
+ */
+const BAND_ALPHA = 0.4; // 0.35~0.45
+
+function buildFearGradient(ctx, scale, fear) {
+  const yTop = scale.getPixelForValue(scale.max);
+  const yBot = scale.getPixelForValue(scale.min);
+  if (!isFinite(yTop) || !isFinite(yBot) || yBot === yTop) return null;
+
+  const g = ctx.createLinearGradient(0, yTop, 0, yBot);
+  const span = yBot - yTop;
+  const stops = (fear.colorStops || []).slice().sort((a, b) => b.v - a.v); // 值降序 → offset 升序
+  if (!stops.length) return null;
+
+  let last = -1;
+  const push = (off, c) => {
+    const o = Math.min(1, Math.max(0, off));
+    if (o <= last) return;          // gradient 要求 offset 单调递增
+    last = o; g.addColorStop(o, c);
+  };
+  push(0, stops[0].c);              // 轴顶：最高档颜色兜底
+  for (const s of stops) push((scale.getPixelForValue(s.v) - yTop) / span, s.c);
+  push(1, stops[stops.length - 1].c); // 轴底：最低档颜色兜底
+  return g;
+}
+
+/**
+ * 彩带样式：默认全部填充（fill）。
+ * 需求原稿设想 secondary 用 1px 轮廓线以避免重叠遮挡，实测视觉上「只有线没有色块」，
+ * 与「彩带」的预期不符，故改为一律填充；'outline' 作为可选样式保留在配置里。
+ * 由配置字段决定，不认指数名。
+ */
+const bandStyleOf = (def) => def.bandStyle || 'fill';
+const OUTLINE_ALPHA = 0.75;
+
+// 把某序列的日内高低整理成若干连续段（遇空值断开）
+function collectBandSegments(data, key, xScale, scale) {
+  const highs = data?.highs?.[key], lows = data?.lows?.[key];
+  if (!highs || !lows || highs.length === 0) return [];
+  const segments = [];
+  let cur = null;
+  for (let i = 0; i < highs.length; i++) {
+    const h = highs[i], l = lows[i];
+    if (h == null || l == null || isNaN(h) || isNaN(l) || h <= 0 || l <= 0) { cur = null; continue; }
+    const x = xScale.getPixelForValue(i);
+    if (!isFinite(x)) { cur = null; continue; }
+    if (!cur) { cur = []; segments.push(cur); }
+    cur.push({ x, yh: scale.getPixelForValue(Math.max(h, l)), yl: scale.getPixelForValue(Math.min(h, l)) });
+  }
+  return segments;
+}
+
+const intradayBandPlugin = {
+  id: 'intradayBand',
+  beforeDatasetsDraw(chart) {
+    if (!bandEnabled) return;                      // 关闭时彻底不画，无残影
+    const scale = chart.scales?.yFear;
+    const xScale = chart.scales?.x;
+    const area = chart.chartArea;
+    if (!scale || !xScale || !area) return;
+
+    const market = MARKETS[currentMarket];
+    const defs = seriesOf(market);
+    const data = currentSliced || currentAligned;
+    if (!data || !market.fears?.length) return;
+
+    const ctx = chart.ctx;
+    const W = area.right - area.left, H = area.bottom - area.top;
+
+    // 待绘制项：各恐慌指数各自的渐变（每个指数一条，不是每天一条）
+    const jobs = [];
+    for (const def of market.fears) {
+      // 该指数被图例点掉时不画——否则会出现「线已隐藏、彩带还在」的残留
+      const dsIdx = defs.findIndex(d => d.key === def.key);
+      if (dsIdx < 0 || !chart.isDatasetVisible(dsIdx)) continue;
+      const segments = collectBandSegments(data, def.key, xScale, scale);
+      if (!segments.length) continue;
+      const grad = buildFearGradient(ctx, scale, def);
+      if (!grad) continue;
+      jobs.push({ def, segments, grad, style: bandStyleOf(def) });
+    }
+    if (!jobs.length) return;
+
+    ctx.save();
+    // 先按绘图区裁剪，避免极端值溢出到坐标区外
+    ctx.beginPath();
+    ctx.rect(area.left, area.top, W, H);
+    ctx.clip();
+
+    // 先填充后描边：轮廓线不会被填充带盖住
+    for (const job of jobs.filter(j => j.style === 'fill')) {
+      ctx.save();
+      ctx.beginPath();
+      for (const seg of job.segments) {
+        if (seg.length === 1) {
+          // 单点：给 0.5px 宽度，避免零面积路径被丢弃
+          const p = seg[0];
+          ctx.moveTo(p.x - 0.5, p.yh); ctx.lineTo(p.x + 0.5, p.yh);
+          ctx.lineTo(p.x + 0.5, p.yl); ctx.lineTo(p.x - 0.5, p.yl);
+        } else {
+          seg.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p.yh) : ctx.lineTo(p.x, p.yh)));
+          for (let i = seg.length - 1; i >= 0; i--) ctx.lineTo(seg[i].x, seg[i].yl);
+        }
+        ctx.closePath();
+      }
+      ctx.clip();                                 // 用彩带路径做裁剪区
+      ctx.globalAlpha = BAND_ALPHA;               // 在渐变色之上再乘一层 alpha
+      ctx.fillStyle = job.grad;
+      ctx.fillRect(area.left, area.top, W, H);
+      ctx.restore();
+    }
+
+    // 轮廓模式：上下边界各一条 1px 线，共用同一条全局渐变，颜色语义与填充带一致
+    for (const job of jobs.filter(j => j.style === 'outline')) {
+      ctx.globalAlpha = OUTLINE_ALPHA;
+      ctx.strokeStyle = job.grad;
+      ctx.lineWidth = 1;
+      ctx.lineJoin = 'round';
+      for (const seg of job.segments) {
+        if (seg.length < 2) continue;
+        for (const edge of ['yh', 'yl']) {
+          ctx.beginPath();
+          seg.forEach((p, i) => (i === 0 ? ctx.moveTo(p.x, p[edge]) : ctx.lineTo(p.x, p[edge])));
+          ctx.stroke();
+        }
+      }
+    }
+
+    ctx.restore();
+  }
+};
+
 const endpointValueTagsPlugin = {
   id: 'endpointValueTags',
   afterDraw(chart) {
@@ -2082,7 +2252,7 @@ function buildChart(aligned, resetViewport = false) {
       scales: buildScales(isPct, market, sliced, logRange, fa),
       animation: { duration: 250, easing: 'easeOutQuart' },
     },
-    plugins: [endpointValueTagsPlugin],
+    plugins: [intradayBandPlugin, endpointValueTagsPlugin],
   });
 
 
@@ -2202,10 +2372,20 @@ function fmtRangeHTML(cur, baseVal) {
 
 // 批次C·需求4：恐慌指数行 = 原始数值 + 档位文字（<low 低波平稳 / low–high 温和波动 / >high 情绪高压）。
 // 低波动=绿、高压=红，与底部说明卡片阈值同源（fear.low/high 配置）。
-function fmtBandHTML(cur, fear) {
+function fmtBandHTML(cur, fear, hi, lo) {
   if (cur == null || isNaN(cur)) return '<span class="tt-missing">数据缺失</span>';
-  const band = cur < fear.low ? '低波平稳' : (cur <= fear.high ? '温和波动' : '情绪高压');
-  const cls = cur < fear.low ? 'down' : (cur <= fear.high ? 'zero' : 'up');
+  // 彩带模式下档位按当日 high 判定（日内触及的最高情绪档），否则按收盘价
+  const judge = (hi != null && !isNaN(hi)) ? hi : cur;
+  const band = judge < fear.low ? '低波平稳' : (judge <= fear.high ? '温和波动' : '情绪高压');
+  const cls = judge < fear.low ? 'down' : (judge <= fear.high ? 'zero' : 'up');
+
+  // 彩带模式：第一行收盘价，第二行日内高/低 + 档位文字
+  const hasIntraday = hi != null && lo != null && !isNaN(hi) && !isNaN(lo) && (hi - lo) > 1e-9;
+  if (hasIntraday) {
+    return `${fmt(cur)} <span class="tt-dim">(收盘)</span>`
+      + `<span class="tt-fear-high">${fmt(hi)} / ${fmt(lo)} <span class="tt-dim">(日内高/低)</span> · `
+      + `<span class="tt-chg ${cls}">${band}</span></span>`;
+  }
   return `${fmt(cur)} <span class="tt-chg ${cls}">${band}</span>`;
 }
 
@@ -2249,8 +2429,13 @@ function updateTooltipContent(chart, idx) {
       dotColor = getVixColor(val, def.colorStops);
     }
     // 恐慌指数档位文字用各指数自己的 low/high；说明卡片阈值只读 primary，但档位随各指数自身中枢
+    // 彩带开启且是 primary 恐慌指数时，附带当日日内高/低（其余情况维持单值显示）
+    // 彩带开启时所有恐慌指数都显示日内高低（primary 填充带 / secondary 轮廓线都有彩带）
+    const showIntraday = bandEnabled && def.isFearIndex === true;
     const valHtml = (def.isFearIndex === true)
-      ? fmtBandHTML(val, def)
+      ? fmtBandHTML(val, def,
+          showIntraday ? aligned.highs?.[def.key]?.[idx] : null,
+          showIntraday ? aligned.lows?.[def.key]?.[idx] : null)
       : fmtRangeHTML(val, currentPlotBase?.[def.key]);
     rows.push(`
       <div class="tooltip-row">
@@ -2355,6 +2540,19 @@ function setupTabListeners() {
     mddBtn.addEventListener('click', () => {
       mddEnabled = !mddEnabled;
       mddBtn.classList.toggle('active', mddEnabled);
+      UserSettings.save();
+    });
+  }
+
+  // 「日内波幅」开关：彩带由 intradayBandPlugin 在 beforeDatasetsDraw 绘制，
+  // 关闭时插件直接返回、不留任何残影；与最大回撤各自独立，非互斥
+  const bandBtn = $('bandToggle');
+  if (bandBtn) {
+    bandBtn.classList.toggle('active', bandEnabled);
+    bandBtn.addEventListener('click', () => {
+      bandEnabled = !bandEnabled;
+      bandBtn.classList.toggle('active', bandEnabled);
+      if (chartInstance) chartInstance.update('none');
       UserSettings.save();
     });
   }
@@ -2687,6 +2885,7 @@ async function init() {
     // 批次C·需求5：模式切换按钮已删除，显示模式固定为绝对数值，忽略旧设置
     chartMode = 'absolute';
     if (typeof saved.mddEnabled === 'boolean') mddEnabled = saved.mddEnabled;
+    if (typeof saved.bandEnabled === 'boolean') bandEnabled = saved.bandEnabled;
     if (saved.hiddenSeries && typeof saved.hiddenSeries === 'object') {
       Object.keys(saved.hiddenSeries).forEach(mktKey => {
         if (hiddenSeries[mktKey] && saved.hiddenSeries[mktKey]) {
