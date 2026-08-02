@@ -961,29 +961,39 @@ function autoScaleKpiBar() {
   // Reset to default so we can measure natural width
   bar.style.fontSize = '';
   bar.style.gap = '';
+  bar.style.paddingTop = '';
+  bar.style.paddingBottom = '';
+  bar.style.paddingLeft = '';
+  bar.style.paddingRight = '';
   void bar.offsetWidth; // force reflow
 
   const style = getComputedStyle(bar);
   const padL = parseFloat(style.paddingLeft) || 0;
   const padR = parseFloat(style.paddingRight) || 0;
+  const padT = parseFloat(style.paddingTop) || 0;
+  const padB = parseFloat(style.paddingBottom) || 0;
+  const baseFontPx = parseFloat(style.fontSize) || 14;
+  const baseGapPx = parseFloat(style.gap) || 16;
   const availW = bar.offsetWidth - padL - padR;
   if (availW <= 0) return;
 
-  // Measure natural scrollWidth of content (all items + separators)
   const contentW = bar.scrollWidth - padL - padR;
-  if (contentW <= availW) return; // already fits, no scaling needed
+  if (contentW <= availW) return;
 
-  // Calculate scale ratio and apply to font-size and gap proportionally
+  // 卡数越多（美股 5 张）越需要激进缩放：下限 7px font / 1px gap，
+  // 同步缩内边距，让百分比基数同步变小。
   const ratio = availW / contentW;
-  const baseFontPx = parseFloat(style.fontSize) || 14;
-  const baseGapPx = parseFloat(style.gap) || 16;
-
-  // Clamp: never go below 9px font (readability floor)
-  const newFontPx = Math.max(9, baseFontPx * ratio * 0.97);
-  const newGapPx = Math.max(4, baseGapPx * ratio * 0.97);
+  const newFontPx = Math.max(7, baseFontPx * ratio * 0.97);
+  const newGapPx = Math.max(1, baseGapPx * ratio * 0.97);
+  const padXRatio = Math.max(8, padL * ratio);
+  const padYRatio = Math.max(6, padT * ratio);
 
   bar.style.fontSize = newFontPx.toFixed(1) + 'px';
   bar.style.gap = newGapPx.toFixed(1) + 'px';
+  bar.style.paddingLeft = padXRatio.toFixed(1) + 'px';
+  bar.style.paddingRight = padXRatio.toFixed(1) + 'px';
+  bar.style.paddingTop = padYRatio.toFixed(1) + 'px';
+  bar.style.paddingBottom = padYRatio.toFixed(1) + 'px';
 }
 
 // Run on resize
