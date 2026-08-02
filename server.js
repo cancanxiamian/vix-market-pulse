@@ -71,12 +71,12 @@ function serveYahoo(symbol, res) {
 
 // ── 定时刷新 ────────────────────────────────────────────────
 function startBackgroundCheck() {
-  console.log('⏰ [cron] 已启动定时器：每 10 分钟自动校验更新本地 JSON 数据文件');
+  console.log('[INFO] ⏰ [cron] 已启动定时器：每 10 分钟自动校验更新本地 JSON 数据文件');
 
   ds.refreshAll(false);
 
   setInterval(() => {
-    console.log(`\n⏰ [cron] 正在定期校验 ${ds.ALL_SYMBOLS.length} 项大盘数据更新 (10分钟周期)...`);
+    console.log(`[INFO] \n⏰ [cron] 正在定期校验 ${ds.ALL_SYMBOLS.length} 项大盘数据更新 (10分钟周期)...`);
     ds.refreshAll(true);
   }, ds.CACHE_TTL_MS);
 }
@@ -120,7 +120,7 @@ const server = http.createServer((req, res) => {
       res.end(JSON.stringify({ error: 'symbol required' }));
       return;
     }
-    console.log(`[${reqPath === '/api/merged' ? 'merged' : 'proxy'}] 请求: ${symbol}`);
+    console.log(`[INFO] [${reqPath === '/api/merged' ? 'merged' : 'proxy'}] 请求: ${symbol}`);
     if (reqPath === '/api/merged') serveMerged(symbol, res);
     else serveYahoo(symbol, res);
     return;
@@ -131,18 +131,18 @@ const server = http.createServer((req, res) => {
 
 if (!IS_VERCEL) {
   server.listen(PORT, () => {
-    console.log(`\n✅ Market Pulse 服务已启动`);
-    console.log(`   本地地址: http://localhost:${PORT}`);
-    console.log(`   数据代理: http://localhost:${PORT}/api/merged?symbol=^VIX`);
-    console.log(`   本地缓存: ${ds.DATA_DIR}\n`);
+    console.log(`[INFO] \n✅ Market Pulse 服务已启动`);
+    console.log(`[INFO]    本地地址: http://localhost:${PORT}`);
+    console.log(`[INFO]    数据代理: http://localhost:${PORT}/api/merged?symbol=^VIX`);
+    console.log(`[INFO]    本地缓存: ${ds.DATA_DIR}\n`);
     startBackgroundCheck();
   });
 
   server.on('error', (err) => {
     if (err.code === 'EADDRINUSE') {
-      console.error(`[error] 端口 ${PORT} 已被占用，请关闭其他程序后重试`);
+      console.error(`[ERROR] [error] 端口 ${PORT} 已被占用，请关闭其他程序后重试`);
     } else {
-      console.error('[error]', err.message);
+      console.error('[ERROR] [error]', err.message);
     }
     process.exit(1);
   });

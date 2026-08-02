@@ -193,7 +193,7 @@ function checkFearSpreadWarning(aligned, market) {
     else break;
   }
   if (streak > 3) {
-    console.warn(`⚠️ [开发断言] ${secondary.key} − ${primary.key} 价差连续 ${streak} 个交易日低于 -2（最新 ${fmt(s[s.length-1])}−${fmt(p[p.length-1])}），疑似错位系数/数据源污染`);
+    console.warn(`[WARN] [开发断言] ${secondary.key} − ${primary.key} 价差连续 ${streak} 个交易日低于 -2（最新 ${fmt(s[s.length-1])}−${fmt(p[p.length-1])}），疑似错位系数/数据源污染`);
   }
 }
 
@@ -378,7 +378,7 @@ const LocalCache = {
       };
       localStorage.setItem(this._key(symbol), JSON.stringify(entry));
     } catch (e) {
-      console.warn('[LocalCache] 写入失败:', e.message);
+      console.warn('[WARN] [LocalCache] 写入失败:', e.message);
     }
   },
 
@@ -436,7 +436,7 @@ const UserSettings = {
       };
       localStorage.setItem(this.KEY, JSON.stringify(payload));
     } catch (e) {
-      console.warn('[UserSettings] save failed:', e.message);
+      console.warn('[WARN] [UserSettings] save failed:', e.message);
     }
   },
 };
@@ -585,7 +585,7 @@ async function _backgroundLatestUpdate(symbol) {
       LocalCache.set(symbol, parsed);
     }
   } catch (e) {
-    console.warn(`[_backgroundLatestUpdate failed for ${symbol}]:`, e.message);
+    console.warn(`[WARN] [_backgroundLatestUpdate failed for ${symbol}]:`, e.message);
     setStatus('最新数据更新受阻（已使用本地数据）', true, true);
     showNotice(`无法连接网络/获取 ${symbol} 最新数据，当前展示本地已缓存历史数据`, true, 6000);
   }
@@ -617,7 +617,7 @@ async function fetchSymbol(symbol) {
       if (parsed && parsed.length) LocalCache.set(symbol, parsed);
       return parsed;
     } catch (e) {
-      console.warn(`[local proxy fetch failed for ${symbol}]:`, e.message);
+      console.warn(`[WARN] [local proxy fetch failed for ${symbol}]:`, e.message);
       showNotice(`抓取 ${symbol} 最新行情失败: ${e.message}`, true, 6000);
       setStatus(`抓取 ${symbol} 数据失败`, false);
       return [];
@@ -669,11 +669,17 @@ function parseMergedData(json, symbol) {
   if (json?.merged && Array.isArray(json.series)) {
     const missingCt = json.series.filter(d => d.source === 'missing').length;
     const backupCt = json.series.filter(d => d.source === 'backup').length;
+    // [INFO] 纯数据说明，不是报错：
+    //  - 「备选源补全」= 双源合并时用 Stooq/东财等补齐 Yahoo 未覆盖的更早历史，
+    //    通常意味着数据范围变长（正常现象）；
+    //  - 「缺失点」= 双源都没有报价（多为美股节假日休市，或该指数无备选源），
+    //    图表会以灰色断点呈现，属预期行为。
     if (missingCt || backupCt) {
-      console.log(`[data] ${symbol}: ${missingCt} 缺失点, 备选源补全 ${backupCt} 点`);
+      console.log(`[INFO] ${symbol} 数据说明（非报错）: 缺失 ${missingCt} 点（多为休市日）${backupCt ? `, 备选源扩展历史 ${backupCt} 点` : ''}`);
     }
+    // [WARN] 真正的异常信号：同一交易日两源收盘价偏差 > 1%
     if (json.crossValidation?.discrepancies?.length) {
-      console.warn(`[数据校验] ${symbol}: ${json.crossValidation.discrepancies.length} 个点两源偏差>1%`, json.crossValidation.discrepancies);
+      console.warn(`[WARN] ${symbol} 两源数据校验偏差>1%: ${json.crossValidation.discrepancies.length} 个交易日`, json.crossValidation.discrepancies);
     }
     return json.series.map(d => ({
       t: d.t,
@@ -2613,7 +2619,7 @@ async function switchMarket(marketId) {
     renderAnnotations(market);
     buildChart(aligned, false);
   } catch (err) {
-    console.error(`[switchMarket error]:`, err);
+    console.error(`[ERROR] [switchMarket error]:`, err);
     showError(`无法加载 ${market.indices[0]?.name || market.id} 数据: ${err.message}`);
   } finally {
     hideLoading();
@@ -2709,7 +2715,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   try {
     await init();
   } catch (e) {
-    console.error('[init crashed]:', e);
+    console.error('[ERROR] [init crashed]:', e);
     hideLoading();
     showError(`初始化失败: ${e.message}`);
   }
