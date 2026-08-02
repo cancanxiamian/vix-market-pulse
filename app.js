@@ -57,16 +57,17 @@ const MARKETS = {
         desc: '^VXN · CBOE 纳斯达克100 波动率', color: '#8fa3c2',
         isFearIndex: true, isPrimary: false, low: 20, high: 32,
         lineDash: [4, 3], // 线型区分：VIX 实线、VXN 虚线（图例同时体现颜色与线型）
-        // 锚点由 .workbuddy/calibrate_fear_stops.js 校准（真实 2514 点分位数）
+        // 锚点由 .workbuddy/calibrate_fear_stops.js 校准（真实 2514 点 high 序列分位数；
+        // 取色输入 = 日内最高，与渲染端 getVixColor 保持一致）
         colorStops: [
-          { v: 13.82, c: '#3B82F6' },  // 5%
-          { v: 17.31, c: '#14B8A6' },  // 25%
-          { v: 21.09, c: '#10B981' },  // 50%
-          { v: 25.64, c: '#EAB308' },  // 70%
-          { v: 30.75, c: '#F97316' },  // 87%
-          { v: 34.33, c: '#EF4444' },  // 93%
-          { v: 37.63, c: '#B91C1C' },  // 97%
-          { v: 53.95, c: '#DB2777' },  // 99.5%
+          { v: 14.34, c: '#3B82F6' },  // 5%
+          { v: 18.05, c: '#14B8A6' },  // 25%
+          { v: 22.13, c: '#10B981' },  // 50%
+          { v: 27.03, c: '#EAB308' },  // 70%
+          { v: 32.67, c: '#F97316' },  // 87%
+          { v: 36.45, c: '#EF4444' },  // 93%
+          { v: 39.88, c: '#B91C1C' },  // 97%
+          { v: 57.78, c: '#DB2777' },  // 99.5%
         ],
       },
     ],
@@ -126,16 +127,16 @@ const MARKETS = {
         key: 'gvz', name: '黄金恐慌指数 (GVZ)', short: 'GVZ', symbol: '^GVZ',
         desc: '^GVZ · CBOE 黄金波动率', color: '#7e8fa5',
         isFearIndex: true, isPrimary: true, low: 15, high: 25,
-        // 锚点由校准脚本基于真实历史 2514 点分位数
+        // 锚点由校准脚本基于真实历史 2514 点 high 序列分位数（取色输入=日内最高）
         colorStops: [
-          { v: 10.67, c: '#3B82F6' },  // 5%
-          { v: 12.66, c: '#14B8A6' },  // 25%
-          { v: 15.88, c: '#10B981' },  // 50%
-          { v: 17.99, c: '#EAB308' },  // 70%
-          { v: 22, c: '#F97316' },     // 87%
-          { v: 25.53, c: '#EF4444' },  // 93%
-          { v: 30.24, c: '#B91C1C' },  // 97%
-          { v: 40.48, c: '#DB2777' },  // 99.5%
+          { v: 10.93, c: '#3B82F6' },  // 5%
+          { v: 13.27, c: '#14B8A6' },  // 25%
+          { v: 16.38, c: '#10B981' },  // 50%
+          { v: 18.74, c: '#EAB308' },  // 70%
+          { v: 23.21, c: '#F97316' },  // 87%
+          { v: 26.8, c: '#EF4444' },   // 93%
+          { v: 31.64, c: '#B91C1C' },  // 97%
+          { v: 43.2, c: '#DB2777' },   // 99.5%
         ],
       },
     ],
@@ -230,21 +231,32 @@ const fearAxisRange = (m, realFearCts = {}) => {
 };
 
 /**
- * 恐慌指数曲线情绪色阶：按当前段两端均值用该指数自己的 colorStops 锚点插值。
+ * 恐慌指数曲线情绪色阶：位置用 close（fearDataArr），颜色用日内最高（highArr）。
+ * 剧震日（2025-04-09 日内高 52.17 / 收盘 34.80）收盘低估恐慌程度，用 high 取色
+ * 才能让颜色反映当天真正的情绪峰值；平静日 high ≈ close，视觉无差异。
+ * 按当前段两端 high 均值用该指数自己的 colorStops 锚点插值。
  * 曲线风格已与股指统一（线宽 2.2 / 无填充 / 最上层）；VXN 等 secondary 用 lineDash 区分。
  */
-function makeFearSegment(fearDataArr, stops) {
+function makeFearSegment(fearDataArr, highArr, stops) {
+  const pick = (ctx) => {
+    const c0 = fearDataArr[ctx.p0DataIndex];
+    const c1 = fearDataArr[ctx.p1DataIndex];
+    if (c0 == null || c1 == null) return null;
+    // 取色输入 = high（日内最高）；high 缺失时退回 close（平静日无差异）
+    const h0 = (highArr && highArr[ctx.p0DataIndex] != null) ? highArr[ctx.p0DataIndex] : c0;
+    const h1 = (highArr && highArr[ctx.p1DataIndex] != null) ? highArr[ctx.p1DataIndex] : c1;
+    return (h0 + h1) / 2;
+  };
   return {
     borderColor: (ctx) => {
-      const v0 = fearDataArr[ctx.p0DataIndex];
-      const v1 = fearDataArr[ctx.p1DataIndex];
-      if (v0 == null || v1 == null) return 'rgba(148, 163, 184, 0.45)';
-      return getVixColor((v0 + v1) / 2, stops);
+      const v = pick(ctx);
+      if (v == null) return 'rgba(148, 163, 184, 0.45)';
+      return getVixColor(v, stops);
     },
     borderDash: (ctx) => {
-      const v0 = fearDataArr[ctx.p0DataIndex];
-      const v1 = fearDataArr[ctx.p1DataIndex];
-      if (v0 == null || v1 == null) return [4, 4];
+      const c0 = fearDataArr[ctx.p0DataIndex];
+      const c1 = fearDataArr[ctx.p1DataIndex];
+      if (c0 == null || c1 == null) return [4, 4];
       return undefined;
     },
   };
@@ -276,7 +288,15 @@ let currentPlotBase = null;   // { [seriesKey]: 基准日原始值 }
  * 对数轴上整条序列乘常数 = 垂直平移固定像素，曲线形状与斜率完全不变，
  * 因此错位不会破坏陡峭度可比性（需求文档「为什么必须是对数轴」）。
  */
-function computePlotData(aligned, market, baseIdx) {
+  // ⚠️ 降采样约束（改动2·需求）：当前全量数据直接进 Chart.js，无降采样/抽稀逻辑。
+  // 若将来为 5y/10y 长窗口引入降采样，必须按数据类型区分：
+  //   - 股指：沿用当时的抽稀规则（取末值/均值均可）
+  //   - 恐慌指数（isFearIndex: true）：桶内必须取 max(high)，
+  //     否则短暂的极端尖峰（如 2020-03、2025-04）在长窗口下会被抹掉，
+  //     而 getVixColor(high) 的取色语义依赖峰值被保留。
+  // 取色输入也一并注意：若降采样改变数据点，分位数校准（calibrate_fear_stops.js）
+  // 需与渲染端输入保持一致（同一序列）。
+  function computePlotData(aligned, market, baseIdx) {
   const factors = layerFactors(market);
   const plot = {}, base = {};
   for (const def of seriesOf(market)) {
@@ -324,13 +344,15 @@ function getSlicedAligned(aligned, start, end) {
   const total = aligned.labels.length;
   const s = Math.max(0, Math.min(total - 1, start ?? 0));
   const e = Math.max(s, Math.min(total - 1, end ?? (total - 1)));
-  const series = {}, pct = {};
+  const series = {}, highs = {}, pct = {};
   for (const k of Object.keys(aligned.series || {})) series[k] = aligned.series[k].slice(s, e + 1);
+  for (const k of Object.keys(aligned.highs || {}))   highs[k]   = aligned.highs[k].slice(s, e + 1);
   for (const k of Object.keys(aligned.pct || {}))    pct[k]    = aligned.pct[k].slice(s, e + 1);
   return {
     labels: aligned.labels.slice(s, e + 1),
     timestamps: aligned.timestamps.slice(s, e + 1),
     series,
+    highs,
     pct,
     missingFlags: aligned.missingFlags.slice(s, e + 1),
     startIndex: s,
@@ -599,6 +621,8 @@ async function fetchSymbol(symbol) {
     return cachedSeries.map(d => ({
       t: d.t,
       v: (d.v != null && !isNaN(d.v)) ? d.v : null,
+      // 日内最高（恐慌指数取色用；股指数据源无 h 时为 undefined，不影响现状）
+      h: (d.h != null && !isNaN(d.h)) ? d.h : null,
       missing: d.source === 'missing',
       source: d.source || 'yahoo',
     }));
@@ -653,12 +677,15 @@ function parseYahooJson(json, symbol) {
   if (!result) throw new Error(`No data for ${symbol}`);
   const timestamps = result.timestamp || [];
   const closes = result.indicators?.quote?.[0]?.close || [];
+  const highs = result.indicators?.quote?.[0]?.high || [];
   // Keep null values with a 'missing' flag so chart can color gaps grey
   return timestamps
     .filter(t => t != null)
     .map((t, i) => ({
       t,
       v: (closes[i] != null && !isNaN(closes[i])) ? closes[i] : null,
+      // 日内最高（恐慌指数取色用），缺失时退回 close（视觉无差异）
+      h: (highs[i] != null && !isNaN(highs[i])) ? highs[i] : (closes[i] != null && !isNaN(closes[i])) ? closes[i] : null,
       missing: closes[i] == null || isNaN(closes[i]),
       source: 'yahoo'
     }));
@@ -684,6 +711,9 @@ function parseMergedData(json, symbol) {
     return json.series.map(d => ({
       t: d.t,
       v: (d.v != null && !isNaN(d.v)) ? d.v : null,
+      // 日内最高：恐慌指数取色输入（getVixColor(high)），线位置仍用 close。
+      // 服务端 merged 已透传（Yahoo 主源 h；备份源无 h 时服务端退回 close 值）。
+      h: (d.h != null && !isNaN(d.h)) ? d.h : null,
       missing: d.source === 'missing',
       source: d.source || 'yahoo'
     }));
@@ -812,15 +842,17 @@ function alignData(filtered) {
   for (const k of keys) for (const d of maps[k].keys()) dateSet.add(d);
   const allDates = Array.from(dateSet).sort();
 
-  const empty = { labels: [], timestamps: [], series: {}, pct: {}, missingFlags: [] };
+  const empty = { labels: [], timestamps: [], series: {}, highs: {}, pct: {}, missingFlags: [] };
   if (allDates.length === 0) {
-    keys.forEach(k => { empty.series[k] = []; empty.pct[k] = []; });
+    keys.forEach(k => { empty.series[k] = []; empty.highs[k] = []; empty.pct[k] = []; });
     return empty;
   }
 
   const series = {};
-  keys.forEach(k => { series[k] = []; });
+  const highs = {};
+  keys.forEach(k => { series[k] = []; highs[k] = []; });
   const last = {};
+  const lastH = {};
   const commonTimestamps = [], labels = [], missingFlags = [];
 
   for (const dateStr of allDates) {
@@ -834,6 +866,10 @@ function alignData(filtered) {
       const v = (e?.v != null && !isNaN(e.v)) ? e.v : (last[k] ?? null);   // 前值填充
       if (v != null) last[k] = v; else anyMissing = true;
       series[k].push(v);
+      // 日内最高：与 v 同规则前值填充；数据源无 h（股指/HV顶替）时退回 v（视觉无差异）
+      const hv = (e?.h != null && !isNaN(e.h)) ? e.h : (lastH[k] ?? v);
+      if (hv != null) lastH[k] = hv;
+      highs[k].push(hv);
     }
 
     commonTimestamps.push(t);
@@ -850,7 +886,7 @@ function alignData(filtered) {
   const pct = {};
   keys.forEach(k => { pct[k] = calcPct(series[k]); });
 
-  return { labels, timestamps: commonTimestamps, series, pct, missingFlags };
+  return { labels, timestamps: commonTimestamps, series, highs, pct, missingFlags };
 }
 
 // ── Compute start/end indices for range selection on full 10-year aligned dataset ─────
@@ -1478,10 +1514,16 @@ function drawCrosshairOverlay(idx, mouseX) {
     const dotX = pt.x + offsetX;
     const dotY = pt.y + offsetY;
 
-    // 恐慌指数（isFearIndex）用各自 colorStops 的情绪色阶着色、且不画横向引导线
+    // 恐慌指数（isFearIndex）用各自 colorStops 的情绪色阶着色、且不画横向引导线。
+    // 取色输入 = 日内最高（与曲线 segment 一致）；high 缺失时退回 close
     const isFearIdx = seriesDefs[dsIdx]?.isFearIndex === true;
-    const dotColor = (isFearIdx && val != null)
-      ? getVixColor(val, seriesDefs[dsIdx]?.colorStops)
+    let colorInput = val;
+    if (isFearIdx) {
+      const hv = activeData.highs?.[seriesDefs[dsIdx].key]?.[idx];
+      if (hv != null && !isNaN(hv)) colorInput = hv;
+    }
+    const dotColor = (isFearIdx && colorInput != null)
+      ? getVixColor(colorInput, seriesDefs[dsIdx]?.colorStops)
       : color;
 
     // 横向引导线：从纵轴延伸到该曲线的交点。
@@ -1736,7 +1778,7 @@ function updateChartViewport() {
     if (!ds) return;
     ds.data = values;
     ds.segment = def.isFearIndex === true
-      ? makeFearSegment(values, def.colorStops)
+      ? makeFearSegment(values, sliced.highs?.[def.key], def.colorStops)
       : makeSegment(values);
   });
 
@@ -2014,7 +2056,7 @@ function buildChart(aligned, resetViewport = false) {
       tension: 0.35,
       spanGaps: true,
       normalized: true,
-      segment: isFear ? makeFearSegment(values, def.colorStops) : makeSegment(values),
+      segment: isFear ? makeFearSegment(values, sliced.highs?.[def.key], def.colorStops) : makeSegment(values),
       yAxisID: isPct ? 'yShared' : (isFear ? 'yFear' : 'yPrice'),
       // 恐慌指数绘制在最上层（与股指一致的视觉优先级，便于看清情绪色）
       order: isFear ? defs.length + 1 : i + 2,
@@ -2209,6 +2251,22 @@ function fmtBandHTML(cur, fear) {
   return `${fmt(cur)} <span class="tt-chg ${cls}">${band}</span>`;
 }
 
+// 恐慌指数 tooltip 两行（需求·改动4）：位置=收盘，颜色/档位=日内最高。
+// 行1：收盘价 + 「收盘」标注；行2：日内最高 + 档位文字（档位按 high 判定）。
+function fmtFearHTML(closeVal, highVal, fear) {
+  if (closeVal == null || isNaN(closeVal)) return '<span class="tt-missing">数据缺失</span>';
+  // 档位判定输入 = 日内最高（与曲线取色一致）；high 缺失时退回 close
+  const bandInput = (highVal != null && !isNaN(highVal)) ? highVal : closeVal;
+  const band = bandInput < fear.low ? '低波平稳' : (bandInput <= fear.high ? '温和波动' : '情绪高压');
+  const cls = bandInput < fear.low ? 'down' : (bandInput <= fear.high ? 'zero' : 'up');
+  const hasHigh = highVal != null && !isNaN(highVal) && Math.abs(highVal - closeVal) > 0.001;
+  const closeStr = `${fmt(closeVal)} <span class="tt-dim">(收盘)</span>`;
+  const highStr = hasHigh
+    ? `${fmt(highVal)} <span class="tt-dim">(日内最高)</span> <span class="tt-chg ${cls}">${band}</span>`
+    : `<span class="tt-chg ${cls}">${band}</span>`;
+  return `${closeStr}<br><span class="tt-fear-high">${highStr}</span>`;
+}
+
 function updateTooltipContent(chart, idx) {
   const aligned = currentSliced || currentAligned;
   if (!aligned) return;
@@ -2244,13 +2302,19 @@ function updateTooltipContent(chart, idx) {
     if (isHidden(dsIdx)) { dsIdx++; return; }
     const vals = aligned.series?.[def.key] || [];
     const val = vals[idx];
+    // 日内最高：tooltip/取色输入（getVixColor(high)）；high 缺失时退回 close
+    const highVals = aligned.highs?.[def.key] || [];
+    const highVal = highVals[idx];
     let dotColor = def.color;
-    if (def.isFearIndex === true && val != null && !isNaN(val)) {
-      dotColor = getVixColor(val, def.colorStops);
+    if (def.isFearIndex === true) {
+      const colorInput = (highVal != null && !isNaN(highVal)) ? highVal : val;
+      if (colorInput != null && !isNaN(colorInput)) {
+        dotColor = getVixColor(colorInput, def.colorStops);
+      }
     }
-    // 恐慌指数档位文字用各指数自己的 low/high；说明卡片阈值只读 primary，但档位随各指数自身中枢
+    // 恐慌指数两行（收盘 + 日内最高 + 档位按 high 判定）；股指保持单行区间涨跌幅
     const valHtml = (def.isFearIndex === true)
-      ? fmtBandHTML(val, def)
+      ? fmtFearHTML(val, highVal, def)
       : fmtRangeHTML(val, currentPlotBase?.[def.key]);
     rows.push(`
       <div class="tooltip-row">
