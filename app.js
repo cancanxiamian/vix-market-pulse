@@ -1802,7 +1802,12 @@ function renderEndpointDOMTags(chart) {
         leftItems.push({
           yRaw: canvasTop + pt.y,
           y: canvasTop + pt.y,
-          x: canvasLeft + chartArea.left,
+          // 锁在数据点自身的 x 位置（不是视口边缘 chartArea.left）：
+          // 当用户拖拽把基准日拖出视口时，pt.x < chartArea.left，
+          // 胶囊渲染时自然落到视口外并被裁掉，符合「拖出视口即消失」的批次B·需求3 原意。
+          // 之前的实现锁在 chartArea.left 会让标签漂在 canvas 最左边缘、但基准日
+          // 已经不在视口里，造成「标签说自己在起点 / 鼠标在视口起点」的位置错觉。
+          x: canvasLeft + pt.x,
           text: fmt(val),
           color
         });
@@ -1818,7 +1823,7 @@ function renderEndpointDOMTags(chart) {
         rightItems.push({
           yRaw: canvasTop + pt.y,
           y: canvasTop + pt.y,
-          x: canvasLeft + chartArea.right,
+          x: canvasLeft + pt.x,
           text: fmt(val),
           color
         });
