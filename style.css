@@ -494,17 +494,6 @@ body.theme-gold #tab-gold.active {
 .tt-chg.zero { color: #94a3b8; }
 .tt-missing  { color: #94a3b8; font-style: italic; font-weight: 500; font-size: .8rem; }
 
-/* 恐慌指数 tooltip 两行（位置=收盘，颜色/档位=日内最高） */
-.tt-dim { color: #94a3b8; font-weight: 500; font-size: .74rem; }
-.tt-fear-high {
-  display: block;
-  font-size: .78rem; font-weight: 600;
-  font-family: 'JetBrains Mono', monospace;
-  color: #cbd5e1;
-  margin-top: 1px;
-  white-space: nowrap;
-}
-
 /* ===== Annotation Bar ===== */
 .annotation-bar {
   display: grid;
