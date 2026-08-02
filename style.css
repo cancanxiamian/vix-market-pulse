@@ -417,7 +417,7 @@ body.theme-gold #tab-gold.active {
   top: 0; left: 0;
   width: 100% !important; height: 100% !important;
   pointer-events: none;
-  z-index: 15;
+  z-index: 19; /* 高于 .endpoint-dom-tags-container(18)，横虚线/十字线盖过起点终点胶囊 */
 }
 
 /* ===== Loading / Error overlays ===== */

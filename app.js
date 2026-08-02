@@ -34,11 +34,42 @@ const MARKETS = {
       { key: 'sox',  name: '费城半导体',   symbol: '^SOX',  desc: '^SOX · 芯片产业指数',  color: '#c084fc', volWeight: 2.5 },
       { key: 'gspc', name: '标普 500',     symbol: '^GSPC', desc: '^GSPC · 标普500大盘',  color: '#F59E0B', volWeight: 1.0 },
     ],
-    fear: {
-      key: 'vix', name: 'VIX 恐慌指数', short: 'VIX', symbol: '^VIX',
-      desc: 'CBOE 波动率 / 恐慌指标', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
-      isFearIndex: true, low: 18, high: 30,
-    },
+    // 恐慌指数数组（N 个）：同一板块共用第二根纵轴；isPrimary 决定底部说明卡片阈值来源
+    fears: [
+      {
+        key: 'vix', name: 'VIX 恐慌指数', short: 'VIX', symbol: '^VIX',
+        desc: 'CBOE 波动率 / 恐慌指标', color: '#7e8fa5',
+        isFearIndex: true, isPrimary: true, low: 18, high: 30,
+        // colorStops 按历史分位数标定（5/25/50/70/87/93/97/99.5%），中位数 17.6
+        colorStops: [
+          { v: 11, c: '#3B82F6' },   // 5%    亮蓝（极度自满）
+          { v: 14, c: '#14B8A6' },   // 25%   青绿（平静）
+          { v: 17.5, c: '#10B981' }, // 50%   绿（中位数）
+          { v: 20, c: '#EAB308' },   // 70%   黄（警戒）
+          { v: 24, c: '#F97316' },   // 87%   橙（不安）
+          { v: 28, c: '#EF4444' },   // 93%   鲜红（恐慌）
+          { v: 35, c: '#B91C1C' },   // 97%   深红（危机）
+          { v: 50, c: '#DB2777' },   // 99.5% 品红（极端）
+        ],
+      },
+      {
+        key: 'vxn', name: 'VXN 恐慌指数', short: 'VXN', symbol: '^VXN',
+        desc: '^VXN · CBOE 纳斯达克100 波动率', color: '#8fa3c2',
+        isFearIndex: true, isPrimary: false, low: 20, high: 32,
+        lineDash: [4, 3], // 线型区分：VIX 实线、VXN 虚线（图例同时体现颜色与线型）
+        // 锚点由 .workbuddy/calibrate_fear_stops.js 校准（真实 2514 点分位数）
+        colorStops: [
+          { v: 13.82, c: '#3B82F6' },  // 5%
+          { v: 17.31, c: '#14B8A6' },  // 25%
+          { v: 21.09, c: '#10B981' },  // 50%
+          { v: 25.64, c: '#EAB308' },  // 70%
+          { v: 30.75, c: '#F97316' },  // 87%
+          { v: 34.33, c: '#EF4444' },  // 93%
+          { v: 37.63, c: '#B91C1C' },  // 97%
+          { v: 53.95, c: '#DB2777' },  // 99.5%
+        ],
+      },
+    ],
     cards: [
       { icon: '📌', band: 'high', desc: '情绪高压 / 剧烈洗盘 — 市场波动率急剧飙升，多空剧烈分歧或大波幅震荡' },
       { icon: '📊', band: 'mid',  desc: '温和波动 / 避险升温 — 市场不确定性上升，防守与加仓博弈并存' },
@@ -56,11 +87,24 @@ const MARKETS = {
       { key: 'sse',   name: '上证综合指数',  symbol: '000001.SS', desc: '000001.SS · 上证综指',   color: '#06B6D4', volWeight: 1.0 },
       { key: 'kc50',  name: '科创 50 指数',  symbol: '000688.SS', desc: '000688.SS · 硬科技龙头', color: '#EC4899', volWeight: 1.8 },
     ],
-    fear: {
-      key: 'vxfxi', name: '中国概念恐慌 (VXFXI)', short: 'VXFXI', symbol: '^VXFXI',
-      desc: '^VXFXI · CBOE 中国股票波动率', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
-      isFearIndex: true, low: 20, high: 35,
-    },
+    fears: [
+      {
+        key: 'vxfxi', name: '中国概念恐慌 (VXFXI)', short: 'VXFXI', symbol: '^VXFXI',
+        desc: '^VXFXI · CBOE 中国股票波动率', color: '#7e8fa5',
+        isFearIndex: true, isPrimary: true, low: 20, high: 35,
+        // 锚点由校准脚本基于 HV 顶替段分位数（^VXFXI 在 Yahoo 仅 1 个真实快照）
+        colorStops: [
+          { v: 7.59, c: '#3B82F6' },   // 5%
+          { v: 10.41, c: '#14B8A6' },  // 25%
+          { v: 12.77, c: '#10B981' },  // 50%
+          { v: 15.42, c: '#EAB308' },  // 70%
+          { v: 21.36, c: '#F97316' },  // 87%
+          { v: 27.09, c: '#EF4444' },  // 93%
+          { v: 30.14, c: '#B91C1C' },  // 97%
+          { v: 46.44, c: '#DB2777' },  // 99.5%
+        ],
+      },
+    ],
     cards: [
       { icon: '🇨🇳', band: 'high', desc: '情绪极端剧烈 / 波动爆表 — 市场处于暴涨狂热或剧烈杀跌期，多空博弈白热化' },
       { icon: '📈', title: '沪深300 / 上证 / 科创50', desc: '蓝筹核心、上证综指与硬科技对照，观察大盘风格切换与板块轮动' },
@@ -77,11 +121,24 @@ const MARKETS = {
       { key: 'gc', name: 'COMEX 黄金期货', symbol: 'GC=F', desc: 'GC=F · 黄金期货 ($/盎司)', color: '#FBBF24', volWeight: 1.0 },
       { key: 'si', name: 'COMEX 白银期货', symbol: 'SI=F', desc: 'SI=F · 白银期货 ($/盎司)', color: '#94A3B8', volWeight: 1.6 },
     ],
-    fear: {
-      key: 'gvz', name: '黄金恐慌指数 (GVZ)', short: 'GVZ', symbol: '^GVZ',
-      desc: '^GVZ · CBOE 黄金波动率', color: '#7e8fa5', // 低饱和中性灰蓝（批次C·需求2）
-      isFearIndex: true, low: 15, high: 25,
-    },
+    fears: [
+      {
+        key: 'gvz', name: '黄金恐慌指数 (GVZ)', short: 'GVZ', symbol: '^GVZ',
+        desc: '^GVZ · CBOE 黄金波动率', color: '#7e8fa5',
+        isFearIndex: true, isPrimary: true, low: 15, high: 25,
+        // 锚点由校准脚本基于真实历史 2514 点分位数
+        colorStops: [
+          { v: 10.67, c: '#3B82F6' },  // 5%
+          { v: 12.66, c: '#14B8A6' },  // 25%
+          { v: 15.88, c: '#10B981' },  // 50%
+          { v: 17.99, c: '#EAB308' },  // 70%
+          { v: 22, c: '#F97316' },     // 87%
+          { v: 25.53, c: '#EF4444' },  // 93%
+          { v: 30.24, c: '#B91C1C' },  // 97%
+          { v: 40.48, c: '#DB2777' },  // 99.5%
+        ],
+      },
+    ],
     cards: [
       { icon: '🪙', band: 'high', desc: '避险情绪爆发 / 波动剧烈 — 地缘政治或宏观事件触发金价大波幅博弈' },
       { icon: '⚡', title: '金银比率观照', desc: '黄金与白银走势对照，反映贵金属避险与工业属性异同' },
@@ -92,8 +149,11 @@ const MARKETS = {
 
 // ── 配置派生工具（全部按 N 计算，无任何板块名/指数名硬编码）──────────
 
-// 所有序列（股指 + 恐慌指数），顺序即数据集顺序
-const seriesOf = (m) => [...m.indices, m.fear];
+// 所有序列（股指 + 恐慌指数），顺序即数据集顺序（恐慌指数支持 N 个）
+const seriesOf = (m) => [...m.indices, ...m.fears];
+
+/** 板块主恐慌指数（isPrimary），底部说明卡片与档位阈值只读它 */
+const primaryFear = (m) => m.fears.find(f => f.isPrimary) || m.fears[0];
 
 /**
  * 垂直错位系数。
@@ -113,8 +173,58 @@ function layerFactors(m) {
   return out;
 }
 
-/** 恐慌指数纵轴范围：由卡片阈值反推，不手工调数字 */
-const fearAxisRange = (m) => ({ min: m.fear.low / 1.5, max: m.fear.high * 4 });
+/**
+ * 恐慌指数纵轴范围：按数据来源自适应。
+ * - 真实历史点 ≥ THRESHOLD：min=low/1.5, max=high*2.5 —— 常态区间在画布占比更大，
+ *   曲线更陡更突出（用户要求，不再兼顾旧验收 5「60 ≤ 70%」；60 约占画布 88%）。
+ * - 真实历史点 < THRESHOLD：loadMarketData 已用 20 日滚动波动率顶替，
+ *   顶替段值范围约 3~80%，故轴放宽到 min=3, max=120，确保低值不被对数轴截断。
+ *   （批次 C 优化点：用户反馈 CN VXFXI 顶替段在原 min=13.3 下不可见。）
+ * 该函数即「VIX 陡峭度旋钮」：调 min/max 公式即可放大/压缩常态区间占比。
+ */
+const FEAR_HV_FALLBACK_THRESHOLD = 10;
+/**
+ * 恐慌指数共用第二根纵轴，范围取所有恐慌指数并集：
+ *   min = min(各自 low) ÷ 1.5，max = max(各自 high) × 4
+ * 单个恐慌指数真实点 < THRESHOLD 时走 HV 顶替分支（min 3 / max 120，兼容顶替段范围）。
+ * realFearCts 形如 { [fearKey]: 真实点数 }（loadMarketData 在顶替前统计）。
+ */
+const fearAxisRange = (m, realFearCts = {}) => {
+  let min = Infinity, max = -Infinity;
+  for (const f of m.fears) {
+    const ct = realFearCts[f.key] ?? Infinity;
+    if (ct < FEAR_HV_FALLBACK_THRESHOLD) {
+      min = Math.min(min, 3);
+      max = Math.max(max, 120);
+    } else {
+      min = Math.min(min, f.low / 1.5);
+      max = Math.max(max, f.high * 4);
+    }
+  }
+  if (min === Infinity) return { min: 1, max: 100 };
+  return { min, max };
+};
+
+/**
+ * 恐慌指数曲线情绪色阶：按当前段两端均值用该指数自己的 colorStops 锚点插值。
+ * 曲线风格已与股指统一（线宽 2.2 / 无填充 / 最上层）；VXN 等 secondary 用 lineDash 区分。
+ */
+function makeFearSegment(fearDataArr, stops) {
+  return {
+    borderColor: (ctx) => {
+      const v0 = fearDataArr[ctx.p0DataIndex];
+      const v1 = fearDataArr[ctx.p1DataIndex];
+      if (v0 == null || v1 == null) return 'rgba(148, 163, 184, 0.45)';
+      return getVixColor((v0 + v1) / 2, stops);
+    },
+    borderDash: (ctx) => {
+      const v0 = fearDataArr[ctx.p0DataIndex];
+      const v1 = fearDataArr[ctx.p1DataIndex];
+      if (v0 == null || v1 == null) return [4, 4];
+      return undefined;
+    },
+  };
+}
 
 /** 批次C·需求7：副标题统一文案（替换各板块原有 chartHint） */
 const CHART_HINT = '统一基准 = 区间首日 · 对数刻度 · 多线垂直错开 · 恐慌指数为背景情绪层';
@@ -326,7 +436,7 @@ function migrateLegacyHiddenKeys(mktId, legacyKeys, target) {
   Object.entries(legacyKeys).forEach(([k, hidden]) => {
     if (hidden !== true) return;
     const pos = LEGACY_HIDDEN_KEY_MAP[k];
-    if (pos === 'fear') target[m.fear.key] = true;
+    if (pos === 'fear') target[primaryFear(m).key] = true;
     else if (typeof pos === 'number' && m.indices[pos]) target[m.indices[pos].key] = true;
   });
 }
@@ -389,67 +499,42 @@ function withAlpha(color, a) {
   return m ? `rgba(${m[1]},${m[2]},${m[3]},${a})` : color;
 }
 
-/**
- * getVixColor(val, marketId)
- * Returns non-linear S-curve gradient for VIX/fear indicators.
- *
- * Financial Volatility Thresholds (Non-linear distribution):
- *   US VIX  : <14 green (calm) … 20 amber (alert) … 27+ red (panic) … 38+ crimson (extreme)
- *   CN VXFXI: <18 green … 25 amber … 32+ red … 45+ crimson
- *   Gold GVZ: <11 green … 16 amber … 22+ red … 30+ crimson
- */
-function getVixColor(val, marketId) {
-  if (val == null || isNaN(val)) return 'rgba(148,163,184,0.5)';
-
-  const configs = {
-    us: { low: 14, warning: 20, panic: 27, extreme: 38 },
-    cn: { low: 18, warning: 25, panic: 32, extreme: 45 },
-    gold: { low: 11, warning: 16, panic: 22, extreme: 30 },
+// hex(#rrggbb) → {r,g,b}
+function hexToRgb(hex) {
+  const h = String(hex || '').replace('#', '');
+  if (h.length !== 6) return { r: 0, g: 0, b: 0 };
+  return {
+    r: parseInt(h.slice(0, 2), 16),
+    g: parseInt(h.slice(2, 4), 16),
+    b: parseInt(h.slice(4, 6), 16),
   };
+}
 
-  const { low, warning, panic, extreme } = configs[marketId] || configs.us;
+/**
+ * getVixColor(val, stops)
+ * 恐慌指数情绪色：对传入的 colorStops（N 锚点，按 v 升序）做「相邻锚点间 RGB 线性插值」。
+ * - 低于首锚点钳到首色，高于末锚点钳到末色
+ * - 必须在相邻锚点之间逐段插值（禁止首尾两色直接插值，绿到红的 RGB 中点是脏橄榄色）
+ * 取色逻辑一律读配置传入的锚点，不判断指数名称。low/high 阈值不参与取色。
+ */
+function getVixColor(val, stops) {
+  if (val == null || isNaN(val)) return 'rgba(148,163,184,0.5)';
+  if (!stops || stops.length === 0) return 'rgba(148,163,184,0.5)';
 
-  // Compute non-linear normalized ratio t (0.0 -> 1.0)
-  let t = 0;
-  if (val <= low) {
-    t = Math.max(0, (val / low) * 0.25);
-  } else if (val <= warning) {
-    t = 0.25 + ((val - low) / (warning - low)) * 0.25;
-  } else if (val <= panic) {
-    t = 0.50 + Math.pow((val - warning) / (panic - warning), 0.85) * 0.35;
-  } else {
-    t = 0.85 + Math.min(0.15, ((val - panic) / (extreme - panic)) * 0.15);
-  }
+  if (val <= stops[0].v) return stops[0].c;
+  const last = stops[stops.length - 1];
+  if (val >= last.v) return last.c;
 
-  // Smooth Interpolation with 4 Color Keyframes:
-  // t=0.00~0.35: Emerald Green (16,185,129) → Yellow-Green (132,204,22)
-  // t=0.35~0.55: Yellow-Green → Warning Amber (245,158,11)
-  // t=0.55~0.85: Amber → Panic Bright Red (239,68,68)
-  // t=0.85~1.00: Bright Red → Extreme Crimson (159,18,57)
-  let r, g, b;
-  if (t <= 0.35) {
-    const s = t / 0.35;
-    r = Math.round(16 + s * (132 - 16));
-    g = Math.round(185 + s * (204 - 185));
-    b = Math.round(129 + s * (22 - 129));
-  } else if (t <= 0.55) {
-    const s = (t - 0.35) / 0.20;
-    r = Math.round(132 + s * (245 - 132));
-    g = Math.round(204 + s * (158 - 204));
-    b = Math.round(22 + s * (11 - 22));
-  } else if (t <= 0.85) {
-    const s = (t - 0.55) / 0.30;
-    r = Math.round(245 + s * (239 - 245));
-    g = Math.round(158 - s * (158 - 68));
-    b = Math.round(11 + s * (68 - 11));
-  } else {
-    const s = Math.min(1, (t - 0.85) / 0.15);
-    r = Math.round(239 - s * (239 - 159));
-    g = Math.round(68 - s * (68 - 18));
-    b = Math.round(68 - s * (68 - 57));
-  }
-
-  return `rgb(${r},${g},${b})`;
+  // 定位所在区间 [stops[i], stops[i+1]]（stops 保证按 v 升序）
+  let i = 0;
+  while (i < stops.length - 2 && val > stops[i + 1].v) i++;
+  const a = stops[i], b = stops[i + 1];
+  const t = (b.v === a.v) ? 0 : (val - a.v) / (b.v - a.v);
+  const ca = hexToRgb(a.c), cb = hexToRgb(b.c);
+  const r = Math.round(ca.r + (cb.r - ca.r) * t);
+  const g = Math.round(ca.g + (cb.g - ca.g) * t);
+  const bl = Math.round(ca.b + (cb.b - ca.b) * t);
+  return `rgb(${r},${g},${bl})`;
 }
 
 // ── Data Fetching Logic ──────────────────────────────────────
@@ -612,26 +697,33 @@ async function loadMarketData(marketId) {
   const market = MARKETS[marketId];
   showLoading(`正在获取 ${market.title} 核心指数与恐慌指标…`);
 
-  // 按配置里的序列顺序并发取数，条数由 indices.length 决定
+  // 按配置里的序列顺序并发取数，条数由 indices.length + fears.length 决定
   const defs = seriesOf(market);
   const results = await Promise.all(defs.map(d => fetchSymbol(d.symbol)));
 
   const raw = {};
   defs.forEach((d, i) => { raw[d.key] = results[i] || []; });
 
-  // 恐慌指数若无有效历史（如 ^VXFXI 只有实时快照），
-  // 用历史点数最多的那条股指算 20 日滚动波动率顶替
-  const fearKey = market.fear.key;
-  const rawFear = raw[fearKey];
-  const realFearCount = rawFear ? rawFear.filter(d => d.v != null && !isNaN(d.v)).length : 0;
-  if (realFearCount < 10 && market.indices.length) {
-    const baseForHv = market.indices
-      .map(idx => raw[idx.key] || [])
-      .reduce((best, cur) => (cur.filter(d => d.v != null).length > best.filter(d => d.v != null).length ? cur : best));
-    raw[fearKey] = calcRollingVolatility(baseForHv);
+  // 每个恐慌指数单独判断：若无有效历史（如 ^VXFXI 只有实时快照），
+  // 用历史点数最多的那条股指算 20 日滚动波动率顶替。
+  // rawFears 保留顶替前的原始序列（KPI 显示真实点位用）；
+  // realFearCts 记录顶替前真实点数（buildChart 决定 yFear 范围走真 VIX 还是 HV 分支）。
+  const rawFears = {};
+  const realFearCts = {};
+  for (const f of market.fears) {
+    const rawFear = raw[f.key] || [];
+    const ct = rawFear.filter(d => d.v != null && !isNaN(d.v)).length;
+    realFearCts[f.key] = ct;
+    rawFears[f.key] = rawFear;
+    if (ct < FEAR_HV_FALLBACK_THRESHOLD && market.indices.length) {
+      const baseForHv = market.indices
+        .map(idx => raw[idx.key] || [])
+        .reduce((best, cur) => (cur.filter(d => d.v != null).length > best.filter(d => d.v != null).length ? cur : best));
+      raw[f.key] = calcRollingVolatility(baseForHv);
+    }
   }
 
-  const marketData = { raw, rawFear };
+  const marketData = { raw, rawFears, realFearCts };
   marketDataStore[marketId] = marketData;
   return marketData;
 }
@@ -813,15 +905,14 @@ function renderKPIs(marketConfig, aligned, rawData) {
     return `<span class="kpi-stale" title="数据源未提供 ${toDateStr(latestTs)} 的数据，此处为 ${toDateStr(chg.lastTs)} 收盘值">滞后</span>`;
   };
 
-  // 按配置遍历所有序列（N 条股指 + 1 条恐慌指数），顺序 = indices[] + fear
+  // 按配置遍历所有序列（N 条股指 + N 条恐慌指数），顺序 = indices[] + fears[]
   const defs = seriesOf(marketConfig);
   let html = '';
   defs.forEach((def, i) => {
     // 原始序列（含 .t/.v）优先，对齐数组兜底。
-    // 恐慌指数优先用替换前的原始序列（rawFear，对应基线 rawVix 语义），
-    // 原始数据不足时回退到 raw[key]（可能为滚动波动率补齐结果）。
+    // 恐慌指数优先用顶替前的原始序列（rawFears[key]），数据不足时回退到 raw[key]（可能为波动率补齐）。
     const rawSeries = def.isFearIndex
-      ? ((rawData?.rawFear && rawData.rawFear.length > 0) ? rawData.rawFear : rawData?.raw?.[def.key])
+      ? ((rawData?.rawFears?.[def.key] && rawData.rawFears[def.key].length > 0) ? rawData.rawFears[def.key] : rawData?.raw?.[def.key])
       : rawData?.raw?.[def.key];
     const alignedArr = aligned.series?.[def.key] || [];
     const chg = getSeriesChg(rawSeries, alignedArr);
@@ -843,7 +934,8 @@ function renderKPIs(marketConfig, aligned, rawData) {
 
 function renderAnnotations(marketConfig) {
   const annoBar = $('annotationBar');
-  const fear = marketConfig.fear;
+  // 底部说明卡片阈值只读 primary 恐慌指数（isPrimary）
+  const fear = primaryFear(marketConfig);
   // band 卡片的标题由 fear 阈值派生（low/high 只在配置里定义一份）：
   //   high → "VIX > 30"   mid → "VIX 18–30"   low → "VIX < 18"
   const bandTitle = (band) => {
@@ -1066,6 +1158,7 @@ function drawRainbowOverlayOnly() {
 function drawFearThresholdLines(ctx, chartArea, offsetX, offsetY) {
   if (!chartInstance || !chartInstance.scales || !chartInstance.scales.yFear) return;
   const market = MARKETS[currentMarket];
+  const fear = primaryFear(market); // 阈值参考线只画 primary 的 low/high（与说明卡片一致）
   const scale = chartInstance.scales.yFear;
   const caTop = chartArea.top + offsetY;
   const caBottom = chartArea.bottom + offsetY;
@@ -1074,7 +1167,7 @@ function drawFearThresholdLines(ctx, chartArea, offsetX, offsetY) {
   ctx.setLineDash([4, 4]);
   ctx.lineWidth = 0.5;
   ctx.strokeStyle = 'rgba(148, 163, 184, 0.4)'; // 0.5px 虚线 + 0.4 透明度
-  for (const v of [market.fear.low, market.fear.high]) {
+  for (const v of [fear.low, fear.high]) {
     const y = scale.getPixelForValue(v) + offsetY;
     if (y == null || isNaN(y) || y < caTop - 2 || y > caBottom + 2) continue;
     ctx.beginPath();
@@ -1345,9 +1438,11 @@ function drawCrosshairOverlay(idx, mouseX) {
     const dotX = pt.x + offsetX;
     const dotY = pt.y + offsetY;
 
-    // 恐慌指数（isFearIndex）用情绪色阶着色、且不画横向引导线
+    // 恐慌指数（isFearIndex）用各自 colorStops 的情绪色阶着色、且不画横向引导线
     const isFearIdx = seriesDefs[dsIdx]?.isFearIndex === true;
-    const dotColor = (isFearIdx && val != null) ? getVixColor(val, currentMarket) : color;
+    const dotColor = (isFearIdx && val != null)
+      ? getVixColor(val, seriesDefs[dsIdx]?.colorStops)
+      : color;
 
     // 横向引导线：从纵轴延伸到该曲线的交点。
     if (!isFearIdx) {
@@ -1600,7 +1695,9 @@ function updateChartViewport() {
     const ds = chartInstance.data.datasets[dsIdx];
     if (!ds) return;
     ds.data = values;
-    ds.segment = makeSegment(values);
+    ds.segment = def.isFearIndex === true
+      ? makeFearSegment(values, def.colorStops)
+      : makeSegment(values);
   });
 
   // ── 批次B·需求1：股指对数轴范围随视口显式重算（min/max 写死，不交给自动缩放）──
@@ -1835,12 +1932,6 @@ function buildChart(aligned, resetViewport = false) {
   // 股指对数轴范围（视口内显式写死，批次B·需求1）
   const logRange = computeLogRange(slicedPlot, market);
 
-  // 恐慌指数渐变背景（fill: true 时生效；股指 fill: false 无需背景）
-  // 批次C·需求2：面积填充透明度 0.12
-  const gradVix = ctx.createLinearGradient(0, 0, 0, 460);
-  gradVix.addColorStop(0, hexToRgba(market.fear.color, .12));
-  gradVix.addColorStop(1, hexToRgba(market.fear.color, 0));
-
   if (chartInstance) {
     chartInstance.destroy();
     chartInstance = null;
@@ -1854,7 +1945,13 @@ function buildChart(aligned, resetViewport = false) {
   const stored = hiddenSeries[market.id] || (hiddenSeries[market.id] = {});
   const wasHidden = (key) => stored[key] ?? false;
 
-  // 数据集顺序 = 配置里的 indices[] + fear，条数任意（N 泛化）
+  // 各恐慌指数真实点数（顶替前）：决定 fearAxisRange 走真 VIX 范围还是 HV 顶替范围。
+  // 取自 marketDataStore.realFearCts（loadMarketData 在 HV 顶替前统计），
+  // 不要用 slicedPlot[fearKey]——顶替后全是 HV 点，无法反映真实可用数据量。
+  const realFearCts = marketDataStore[market.id]?.realFearCts ?? {};
+  const fa = fearAxisRange(market, realFearCts);
+
+  // 数据集顺序 = 配置里的 indices[] + fears[]，条数任意（N 泛化）
   const seriesKeys = defs.map(d => d.key);
   const datasets = defs.map((def, i) => {
     const isFear = def.isFearIndex === true;
@@ -1862,21 +1959,23 @@ function buildChart(aligned, resetViewport = false) {
     return {
       label: isFear ? `${def.name}` : `${def.name} (${def.symbol})`,
       data: values,
-      // 批次C·需求2：恐慌指数用低饱和中性色 + 线宽 1.2 + 透明度 0.65（背景层，不抢戏）
-      borderColor: isFear ? withAlpha(def.color, .65) : def.color,
-      backgroundColor: isFear ? gradVix : undefined,
-      borderWidth: isFear ? 1.2 : 2.2,
+      // 恐慌指数线风格与股指统一：线宽 2.2、不透明、无填充、tension 0.35；
+      // 颜色由 makeFearSegment 按该指数自己的 colorStops 情绪色阶逐段渲染。
+      borderColor: def.color,
+      backgroundColor: undefined,
+      borderWidth: 2.2,
+      // 线型区分恐慌指数身份（VIX 实线 / VXN 虚线），图例同步体现颜色+线型
+      borderDash: (isFear && def.lineDash) ? def.lineDash : undefined,
       pointRadius: 0,
       pointHoverRadius: 0,
-      fill: isFear,
-      tension: isFear ? 0.3 : 0.35,
+      fill: false,
+      tension: 0.35,
       spanGaps: true,
       normalized: true,
-      // 恐慌指数不再用绿→红情绪色阶给曲线分段着色（需求2：统一低饱和中性色）
-      segment: makeSegment(values),
+      segment: isFear ? makeFearSegment(values, def.colorStops) : makeSegment(values),
       yAxisID: isPct ? 'yShared' : (isFear ? 'yFear' : 'yPrice'),
-      // 批次C·需求2：恐慌指数渲染层级在股指下方（order 最小）
-      order: isFear ? 1 : i + 2,
+      // 恐慌指数绘制在最上层（与股指一致的视觉优先级，便于看清情绪色）
+      order: isFear ? defs.length + 1 : i + 2,
       hidden: wasHidden(def.key),
     };
   });
@@ -1904,7 +2003,8 @@ function buildChart(aligned, resetViewport = false) {
             color: '#94a3b8',
             font: { family: 'Inter', size: 12 },
             boxWidth: 16, boxHeight: 3, padding: 20,
-            usePointStyle: true, pointStyle: 'line',
+            // usePointStyle: false → 图例以横线段绘制，dataset.borderDash 的线型（VIX 实线 / VXN 虚线）可同步体现
+            usePointStyle: false,
           },
           // 保留 Chart.js 默认的显隐切换，额外把结果记进 hiddenSeries，
           // 使切换时间跨度 / 涨跌幅模式重建图表后仍保持用户的选择
@@ -1937,7 +2037,7 @@ function buildChart(aligned, resetViewport = false) {
         // 左侧按 resolveAxisGutter 精确预留，保证数值与百分比完整展示
         padding: { left: axisGutter, right: 0, top: 0, bottom: 0 }
       },
-      scales: buildScales(isPct, market, sliced, logRange),
+      scales: buildScales(isPct, market, sliced, logRange, fa),
       animation: { duration: 250, easing: 'easeOutQuart' },
     },
     plugins: [endpointValueTagsPlugin],
@@ -1946,7 +2046,7 @@ function buildChart(aligned, resetViewport = false) {
 
   currentAligned = aligned;
 
-  function buildScales(pct, m, slicedData, logRange) {
+  function buildScales(pct, m, slicedData, logRange, faOverride) {
     const xScale = {
       offset: false,
       bounds: 'data',
@@ -2026,7 +2126,7 @@ function buildChart(aligned, resetViewport = false) {
         max: logRange?.max ?? 100,
       };
 
-      const fa = fearAxisRange(m);
+      const fa = faOverride || fearAxisRange(m);
       scales.yFear = {
         type: 'logarithmic',
         position: 'right',
@@ -2094,7 +2194,7 @@ function updateTooltipContent(chart, idx) {
     `);
   }
 
-  // 按配置遍历所有序列（N 泛化）；恐慌指数用情绪色阶着色、显示档位文字
+  // 按配置遍历所有序列（N 泛化）；恐慌指数用各自 colorStops 情绪色阶着色、显示档位文字
   const defs = seriesOf(market);
   let dsIdx = 0;
 
@@ -2104,10 +2204,11 @@ function updateTooltipContent(chart, idx) {
     const val = vals[idx];
     let dotColor = def.color;
     if (def.isFearIndex === true && val != null && !isNaN(val)) {
-      dotColor = getVixColor(val, currentMarket);
+      dotColor = getVixColor(val, def.colorStops);
     }
+    // 恐慌指数档位文字用各指数自己的 low/high；说明卡片阈值只读 primary，但档位随各指数自身中枢
     const valHtml = (def.isFearIndex === true)
-      ? fmtBandHTML(val, market.fear)
+      ? fmtBandHTML(val, def)
       : fmtRangeHTML(val, currentPlotBase?.[def.key]);
     rows.push(`
       <div class="tooltip-row">
@@ -2117,6 +2218,25 @@ function updateTooltipContent(chart, idx) {
       </div>`);
     dsIdx++;
   });
+
+  // 同板块有多个恐慌指数时，额外显示「secondary − primary」价差行（美股 VXN − VIX，
+  // 正数表示科技股波动溢价，比两个绝对值更有解读价值）
+  if (market.fears.length > 1) {
+    const primary = primaryFear(market);
+    const secondary = market.fears.find(f => !f.isPrimary);
+    const pVal = aligned.series?.[primary.key]?.[idx];
+    const sVal = secondary ? aligned.series?.[secondary.key]?.[idx] : null;
+    if (pVal != null && sVal != null && !isNaN(pVal) && !isNaN(sVal)) {
+      const diff = sVal - pVal;
+      const cls = diff >= 0 ? 'up' : 'down'; // 溢价为正 → 暖色（A股习惯红涨）
+      rows.push(`
+        <div class="tooltip-row spread-row">
+          <span class="tt-dot" style="background:linear-gradient(90deg, ${secondary.color}, ${primary.color})"></span>
+          <span class="tt-label">${secondary.short} − ${primary.short} 价差</span>
+          <span class="tt-val">${fmt(diff)} <span class="tt-chg ${cls}">(${diff >= 0 ? '+' : ''}${diff.toFixed(2)})</span></span>
+        </div>`);
+    }
+  }
 
   $('tooltipRows').innerHTML = rows.join('');
   positionTooltip(chart);
